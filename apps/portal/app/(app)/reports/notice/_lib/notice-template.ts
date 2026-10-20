@@ -1,6 +1,7 @@
+import { ULB } from "@/lib/ulb-branding"
 /**
  * A4 Property Tax Demand Notice — official government-document layout
- * for Nagar Panchayat Chhata. Site imagery and GIS map/coordinates omitted.
+ * for the configured ULB (lib/ulb-branding.ts). Site imagery and GIS map/coordinates omitted.
  */
 
 type FloorRow = {
@@ -78,7 +79,7 @@ function buildAddress(survey: SurveyData): string {
     survey.streetName,
     survey.locality,
     survey.colony,
-    survey.city ?? "Nagar Panchayat Chhata",
+    survey.city ?? ULB.nameEn,
     survey.pincode,
   ].filter(Boolean)
   return parts.length > 0 ? parts.join(", ") : "—"
@@ -118,7 +119,7 @@ function defaultFloorCalcs(floors: FloorRow[]): NoticeFloorCalc[] {
   }))
 }
 
-const DEFAULT_WEBSITE_HOST = "www.npchhata.com"
+const DEFAULT_WEBSITE_HOST = ULB.websiteHost
 
 export function generateDemandNoticeHtml(
   survey: SurveyData,
@@ -128,7 +129,7 @@ export function generateDemandNoticeHtml(
     assessmentYear?: string
     /** Absolute URL or data URI — required for print popup (about:blank). */
     logoUrl?: string
-    /** Public website hostname for payment instructions (e.g. www.npchhata.com). */
+    /** Public website hostname for payment instructions (e.g. nppshamli.in). */
     websiteDisplayHost?: string
   }
 ): string {
@@ -620,8 +621,8 @@ table.alv tr.total td {
       />
     </div>
     <div class="header-center">
-      <div class="office-en">Office of Nagar Panchayat Chhata</div>
-      <div class="office-loc">Chhata, Mathura, Uttar Pradesh</div>
+      <div class="office-en">Office of ${esc(ULB.nameEn)}</div>
+      <div class="office-loc">${esc(ULB.town)}, ${esc(ULB.district)}, ${esc(ULB.state)}</div>
       <div class="title-en">Property Tax Demand Notice</div>
       <div class="title-hi">संपत्ति कर मांग सूचना पत्र</div>
     </div>
@@ -750,7 +751,7 @@ table.alv tr.total td {
     <div class="notice-body">
       कृपया नोटिस प्राप्ति के 15 दिवस के अन्दर यदि कोई आपत्ति हो तो पालिका में दाखिल करें। अन्यथा कथित स्थिति में आपकी स्वीकृति मानते हुए उक्त मूल्यांकन दर प्रभावी कर दी जायेगी। वाद मियाद डिमांड कायम करते हुए नगर पालिका अधिनियम 1916 की धारा 141 क 2 के अनुसार शास्ति निर्धारण करते हुए बिल मांग प्रेषित की जायेगी एवं अधिनियम 1916 की धारा 144 एवं भूमि/भवन स्वकर निर्धारण नियमावली 2024 के अन्तर्गत वसूली की जायेगी एवं निर्धारण अवधि में कर जमा करने पर सम्पत्ति कर में छूट एवं निर्धारण अवधि में कर जमा न करने पर ब्याज सहित वसूला जाएगा।
       <div class="note">नोट:- उक्त कर निर्धारण वाद प्रक्रिया हेतु मान्य नहीं होगा एवं कोई भी भवन स्वामी का उक्त प्रक्रिया एवं कर रसीद के स्वामित्व का दावा मान्य नहीं होगा। यदि पूर्व में गृह कर की धन राशि बकाया है तो वह मांग के अनुसार देय होगी।</div>
-      <div class="payment-point">नगर पंचायत छाता की वेबसाइट <span class="site-url">${esc(websiteHost)}</span> पर लॉग इन कर अथवा सीधे नगर पंचायत काउंटर पर भी सामान्य कर (गृह कर) का भुगतान किया जा सकता है।</div>
+      <div class="payment-point">${esc(ULB.nameHi)} की वेबसाइट <span class="site-url">${esc(websiteHost)}</span> पर लॉग इन कर अथवा सीधे पालिका काउंटर पर भी सामान्य कर (गृह कर) का भुगतान किया जा सकता है।</div>
     </div>
   </div>
 

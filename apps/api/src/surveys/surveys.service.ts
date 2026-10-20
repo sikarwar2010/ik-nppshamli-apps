@@ -2,9 +2,11 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common"
 import { Prisma, type Survey } from "@prisma/client"
+import { createHash } from "node:crypto"
 import { parseGisSurveyId } from "@workspace/types"
 
 import { AuditService } from "../audit/audit.service"
@@ -37,6 +39,8 @@ type SurveyIdentityDto = Pick<
 
 @Injectable()
 export class SurveysService {
+  private readonly logger = new Logger(SurveysService.name)
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -630,12 +634,17 @@ export class SurveysService {
         objectKey: string
         mimeType: string
         uploadedById?: string | null
+        storageStatus?: string
       }>
     },
   >(survey: T, user: AuthUser) {
     if (!survey.attachments?.length) return survey
     const attachments = await Promise.all(
       survey.attachments.map(async (a) => {
+        // Imported images awaiting MinIO migration have no stored object yet.
+        if (a.storageStatus && a.storageStatus !== "AVAILABLE") {
+          return { ...a, url: null }
+        }
         const url = await this.storage
           .getSignedUrlForUser(user, a.objectKey, {
             surveyId: survey.id,
@@ -658,7 +667,12 @@ export class SurveysService {
     assertSurveyAccess(user, current, "update")
     const safeName = file.originalname.replace(/[^\w.-]+/g, "_").slice(0, 180)
     const objectKey = `surveys/${current.id}/${Date.now()}-${safeName}`
-    await this.storage.putObject(objectKey, file.buffer, file.mimetype)
+    const checksumSha256 = createHash("sha256")
+      .update(file.buffer)
+      .digest("hex")
+    await this.storage.putObject(objectKey, file.buffer, file.mimetype, {
+      sha256: checksumSha256,
+    })
     const attachment = await this.prisma.surveyAttachment.create({
       data: {
         surveyId: current.id,
@@ -666,7 +680,8 @@ export class SurveysService {
         originalFileName: file.originalname,
         mimeType: file.mimetype,
         size: file.size,
-        bucket: process.env.STORAGE_NAME ?? "local",
+        bucket: this.storage.bucketName,
+        checksumSha256,
         uploadedById: user.id,
       },
     })
@@ -704,6 +719,21 @@ export class SurveysService {
       })
     }
     await this.prisma.surveyAttachment.delete({ where: { id: attachmentId } })
+    // Remove the binary only when no other attachment row still references it.
+    const stillReferenced = await this.prisma.surveyAttachment.count({
+      where: { objectKey: attachment.objectKey, bucket: attachment.bucket },
+    })
+    if (
+      stillReferenced === 0 &&
+      attachment.storageStatus === "AVAILABLE" &&
+      attachment.bucket === this.storage.bucketName
+    ) {
+      await this.storage.deleteObject(attachment.objectKey).catch((err) => {
+        this.logger.warn(
+          `Attachment ${attachmentId} removed; object ${attachment.objectKey} not deleted: ${String(err)}`
+        )
+      })
+    }
     await this.audit.log({
       action: "SURVEY_ATTACHMENT_REMOVED",
       entity: "Survey",

@@ -19,6 +19,7 @@ import {
   type AuthUser,
 } from "../auth/auth.decorators"
 import { canReadSurveyPii } from "../auth/auth-permissions"
+import { sniffFileType } from "../storage/file-signature"
 import {
   CreateSurveyDto,
   ListSurveysQueryDto,
@@ -92,7 +93,19 @@ export class SurveysController {
         message: `File must be under ${maxMb}MB`,
       })
     }
-    const data = await this.surveysService.addAttachment(id, file, user)
+    // Trust the bytes, not the client-declared type.
+    const sniffed = sniffFileType(file.buffer)
+    if (!sniffed || !IMAGE_MIME.has(sniffed)) {
+      throw new BadRequestException({
+        code: "INVALID_FILE_CONTENT",
+        message: "File content is not a valid JPEG, PNG, WebP, GIF, or PDF",
+      })
+    }
+    const data = await this.surveysService.addAttachment(
+      id,
+      { ...file, mimetype: sniffed },
+      user
+    )
     return { success: true, data }
   }
 

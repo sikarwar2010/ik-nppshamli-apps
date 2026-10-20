@@ -6,6 +6,7 @@ import "@workspace/ui/globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { QueryProvider } from "@/components/query-provider"
 import { cn } from "@workspace/ui/lib/utils"
+import { ULB } from "@/lib/ulb-branding"
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" })
 const fontMono = Geist_Mono({ subsets: ["latin"], variable: "--font-mono" })
@@ -16,7 +17,7 @@ const notoDevanagari = Noto_Sans_Devanagari({
 })
 
 export const metadata = {
-  title: "Nagar Panchayat Chhata",
+  title: ULB.nameEn,
   description: "Survey, property data and payment management platform",
 }
 

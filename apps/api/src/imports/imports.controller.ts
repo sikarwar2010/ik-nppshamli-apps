@@ -61,6 +61,14 @@ export class ImportsController {
     return { success: true, data: items, meta }
   }
 
+  /** Dry-run validation and create/update/conflict classification (no writes). */
+  @Get(":id/preview")
+  @RequirePermission("import:read")
+  async preview(@Param("id") id: string) {
+    const data = await this.importsService.preview(id)
+    return { success: true, data }
+  }
+
   @Get(":id")
   @RequirePermission("import:read")
   async get(@Param("id") id: string) {
@@ -76,7 +84,7 @@ export class ExportsController {
   @Post("surveys")
   @RequirePermission("export:create")
   async exportSurveys(
-    @Body() body: { wardId?: string; status?: string },
+    @Body() body: { wardId?: string; status?: string; format?: "shamli" | "chhata" },
     @CurrentUser() user: AuthUser
   ) {
     const data = await this.importsService.exportSurveys(body, user)

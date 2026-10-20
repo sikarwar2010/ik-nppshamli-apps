@@ -19,6 +19,7 @@ import { Label } from "@workspace/ui/components/label"
 import { cn } from "@workspace/ui/lib/utils"
 
 import { ApiError, api } from "@/lib/api"
+import { ULB } from "@/lib/ulb-branding"
 
 async function clearLegacyAuthCookies() {
   try {
@@ -185,7 +186,7 @@ export default function LoginPage() {
 
             <div className="mt-12 max-w-lg">
               <p className="font-[family-name:var(--font-deva)] text-sm font-medium tracking-wide text-sky-200/90">
-                नगर पंचायत छाता · Mathura
+                {ULB.nameHi} · {ULB.district}
               </p>
               <h1
                 id="login-hero-title"
@@ -228,7 +229,7 @@ export default function LoginPage() {
           </ul>
 
           <p className="relative z-10 mt-10 text-xs leading-relaxed text-slate-400">
-            Official municipal operations portal for Nagar Panchayat Chhata.
+            Official municipal operations portal for {ULB.nameEn}.
             Unauthorized access is prohibited and monitored.
           </p>
         </section>
@@ -255,7 +256,7 @@ export default function LoginPage() {
               </div>
               <div>
                 <p className="text-[11px] font-semibold tracking-[0.15em] text-sky-900 uppercase">
-                  Nagar Panchayat Chhata
+                  {ULB.nameEn}
                 </p>
                 <p className="font-[family-name:var(--font-deva)] text-sm text-slate-600">
                   स्टाफ पोर्टल

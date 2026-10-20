@@ -1,4 +1,5 @@
 import { resolveSeedAdminConfig } from "../db/seed-admin-config"
+import { collectStorageEnvErrors } from "../storage/storage-config"
 
 export type ValidateEnvOptions = {
   /** Validate Super Admin seed credentials (container startup / seed-cli). */
@@ -78,6 +79,8 @@ export function assertRequiredEnv(options: ValidateEnvOptions = {}): void {
   ) {
     errors.push("SESSION_SECRET must be at least 32 characters")
   }
+
+  errors.push(...collectStorageEnvErrors(env))
 
   if (isProduction(env)) {
     errors.push(...collectProductionErrors(env))

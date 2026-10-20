@@ -1,14 +1,25 @@
-/** Parcel / property display matching GIS Survey Id `249044-001-000001-001-R`. */
+/**
+ * Parcel / property display for GIS Survey Ids (`800645-003-00001-001-H`
+ * Shamli, `249044-001-000001-001-R` Chhata). Stored ids are shown as-is.
+ */
 
 import {
-  buildSurveyIdFromRecord,
+  SHAMLI_ULB_CODE,
   formatParcelNo as formatParcelNoShared,
   formatPropertyNo as formatPropertyNoShared,
   normalizeParcelNo as normalizeParcelNoStrict,
   parseGisSurveyId as parseGisSurveyIdShared,
+  replacePlaceholderWardSegment,
 } from "@workspace/types"
+import { ULB } from "@/lib/ulb-branding"
 
-export const ULB_NAME = "Nagar Panchayat Chhata"
+// NEXT_PUBLIC_* values are inlined at build time (must be referenced literally).
+export const ULB_NAME = ULB.nameEn
+export const PORTAL_ULB_CODE =
+  process.env.NEXT_PUBLIC_ULB_CODE?.trim() || SHAMLI_ULB_CODE
+/** Shamli parcels are 5 digits (`00001`); set 6 for Chhata-style ids. */
+export const PORTAL_PARCEL_DIGITS =
+  Number(process.env.NEXT_PUBLIC_SURVEY_PARCEL_DIGITS) || 5
 
 /** Portal-compatible shape (legacy field names). */
 export type GisSurveyParts = {
@@ -46,7 +57,7 @@ export {
 /** Safe parcel pad; returns null when input has no digits. */
 export function tryNormalizeParcelNo(value: string): string | null {
   try {
-    return normalizeParcelNoStrict(value)
+    return normalizeParcelNoStrict(value, PORTAL_PARCEL_DIGITS)
   } catch {
     return null
   }
@@ -79,25 +90,17 @@ export function pickBestSurveySearchMatch<
   return rows[0]
 }
 
-/** Display canonical survey id (ward from record, not placeholder `000` in stored id). */
+/**
+ * Display the stored survey id. Only a legacy placeholder `000` ward segment is
+ * substituted; ULB, parcel width and unit are never rebuilt for display.
+ */
 export function formatSurveyId(input: {
   surveyId: string
   wardNumber: number
   parcelNo?: string | null
   propertyNo?: string | null
 }): string {
-  try {
-    const parsed = parseGisSurveyIdShared(input.surveyId)
-    return buildSurveyIdFromRecord({
-      surveyId: input.surveyId,
-      wardNumber: input.wardNumber,
-      parcelNo: input.parcelNo,
-      propertyNo: input.propertyNo,
-      gisUseCode: parsed?.gisUseCode,
-    })
-  } catch {
-    return input.surveyId
-  }
+  return replacePlaceholderWardSegment(input.surveyId, input.wardNumber)
 }
 
 export function toNumber(value?: string | number | null): number | null {

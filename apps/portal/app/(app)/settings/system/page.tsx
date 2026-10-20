@@ -21,6 +21,7 @@ import {
 
 import { citizenPropertyTaxUrl, getCitizenWebUrl } from "@/lib/citizen-web-url"
 import { SettingsPageHeader } from "../_components/settings-page-header"
+import { ULB } from "@/lib/ulb-branding"
 
 export default function SystemSettingsPage() {
   return (
@@ -46,8 +47,8 @@ export default function SystemSettingsPage() {
             </div>
           </CardHeader>
           <CardContent className="space-y-3 pt-(--card-spacing)">
-            <InfoRow label="Organization" value="Nagar Panchayat Chhata" />
-            <InfoRow label="District" value="Mathura, Uttar Pradesh" />
+            <InfoRow label="Organization" value={ULB.nameEn} />
+            <InfoRow label="District" value={`${ULB.district}, ${ULB.state}`} />
             <InfoRow
               label="Portal"
               value="Municipal survey & property tax ops"

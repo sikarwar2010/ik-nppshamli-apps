@@ -79,7 +79,12 @@ export class HealthV1Controller {
     const runtime = getApiRuntimeInfo()
     const deps = await this.health.checkDependencies()
 
-    if (!deps.routesRegistered || !deps.postgres || !deps.redis) {
+    if (
+      !deps.routesRegistered ||
+      !deps.postgres ||
+      !deps.redis ||
+      !deps.storage
+    ) {
       throw new ServiceUnavailableException({
         code: "NOT_READY",
         message: "API is not ready",
@@ -87,6 +92,8 @@ export class HealthV1Controller {
           routesRegistered: deps.routesRegistered,
           postgres: deps.postgres,
           redis: deps.redis,
+          storage: deps.storage,
+          storageDriver: deps.storageDriver,
         },
       })
     }
@@ -102,6 +109,8 @@ export class HealthV1Controller {
         nodeEnv: runtime.nodeEnv,
         postgres: true,
         redis: true,
+        storage: true,
+        storageDriver: deps.storageDriver,
         routesVerifiedAt,
         routesVerified: verifiedRoutes.map((r) => r.route),
         timestamp: new Date().toISOString(),

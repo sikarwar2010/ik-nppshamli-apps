@@ -1,6 +1,8 @@
 import type { Prisma } from "@prisma/client"
 import { normalizeParcelNo } from "@workspace/types"
 
+import { getParcelDigits } from "./survey-id.util"
+
 /** Build list-search OR clauses (contains + padded parcel / exact survey id). */
 export function buildSurveySearchOr(
   search: string
@@ -20,7 +22,7 @@ export function buildSurveySearchOr(
 
   if (/^\d[\d\s-]*$/.test(q)) {
     try {
-      const paddedParcel = normalizeParcelNo(q)
+      const paddedParcel = normalizeParcelNo(q, getParcelDigits())
       or.push({ parcelNo: { equals: paddedParcel, mode: "insensitive" } })
     } catch {
       // ignore non-parcel digit noise

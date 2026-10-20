@@ -54,6 +54,7 @@ import { cn } from "@workspace/ui/lib/utils"
 
 import { useCan } from "@/hooks/use-permission"
 import { api } from "@/lib/api"
+import { ULB } from "@/lib/ulb-branding"
 import { formatApiError } from "@/lib/format-api-error"
 
 type WardCardStatus = "PENDING" | "COMPLETED"
@@ -271,7 +272,7 @@ export default function DashboardPage() {
             </ol>
           </nav>
           <h1 className="text-2xl font-bold tracking-tight text-foreground md:text-3xl">
-            Nagar Panchayat Chhata
+            {ULB.nameEn}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Ward-wise survey progress and assessed tax demand

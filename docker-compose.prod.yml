@@ -34,7 +34,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
-      - chhata_pg_data:/var/lib/postgresql/data
+      - shamli_pg_data:/var/lib/postgresql/data
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\"" ]
       interval: 5s
@@ -51,7 +51,7 @@ services:
       REDISCLI_AUTH: ${REDIS_PASSWORD}
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
     volumes:
-      - chhata_redis_data:/data
+      - shamli_redis_data:/data
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
@@ -90,7 +90,7 @@ services:
       # POST /api/v1/payments/gateway/callback on the API container.
       ATOM_CALLBACK_URL: ${PUBLIC_WEB_URL}/api/v1/payments/gateway/callback
     volumes:
-      - chhata_uploads:/app/uploads
+      - shamli_uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -107,14 +107,14 @@ services:
     networks:
       default:
         aliases:
-          - chhata-api
+          - shamli-api
 
   portal:
     build:
       context: .
       dockerfile: docker/portal.Dockerfile
       args:
-        API_INTERNAL_URL: http://chhata-api:4000
+        API_INTERNAL_URL: http://shamli-api:4000
         NEXT_PUBLIC_APP_URL: ${PUBLIC_PORTAL_URL}
         NEXT_PUBLIC_CITIZEN_WEB_URL: ${PUBLIC_WEB_URL}
     restart: unless-stopped
@@ -123,10 +123,10 @@ services:
       NODE_ENV: production
       PORT: "3000"
       HOSTNAME: 0.0.0.0
-      API_INTERNAL_URL: http://chhata-api:4000
+      API_INTERNAL_URL: http://shamli-api:4000
       NEXT_PUBLIC_APP_URL: ${PUBLIC_PORTAL_URL}
       NEXT_PUBLIC_CITIZEN_WEB_URL: ${PUBLIC_WEB_URL}
-      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-chhata_session}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-shamli_session}
     depends_on:
       api:
         condition: service_healthy
@@ -144,7 +144,7 @@ services:
       context: .
       dockerfile: docker/web.Dockerfile
       args:
-        API_INTERNAL_URL: http://chhata-api:4000
+        API_INTERNAL_URL: http://shamli-api:4000
     restart: unless-stopped
     env_file: .env
     environment:
@@ -165,6 +165,6 @@ services:
       - "3001"
 
 volumes:
-  chhata_pg_data:
-  chhata_redis_data:
-  chhata_uploads:
+  shamli_pg_data:
+  shamli_redis_data:
+  shamli_uploads:

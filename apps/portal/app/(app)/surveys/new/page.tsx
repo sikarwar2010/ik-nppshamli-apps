@@ -27,7 +27,12 @@ import {
   parseFloorsRaw,
   validateMixedComposition,
 } from "@/lib/floors"
-import { generateSurveyId, parseGisSurveyId } from "@/lib/survey-format"
+import {
+  PORTAL_PARCEL_DIGITS,
+  PORTAL_ULB_CODE,
+  generateSurveyId,
+  parseGisSurveyId,
+} from "@/lib/survey-format"
 import {
   CITIES,
   COMMERCIAL_USES,
@@ -58,6 +63,7 @@ import {
   useUnsavedChangesGuard,
 } from "../_components/unsaved-changes-guard"
 import { UsageCompositionPanel } from "../_components/usage-composition-panel"
+import { ULB } from "@/lib/ulb-branding"
 
 type FormValues = {
   surveyId: string
@@ -192,8 +198,8 @@ const emptyForm: FormValues = {
   propertyNo: "",
   respondentName: "",
   respondentRelationship: "",
-  city: "Chhata",
-  pincode: "281401",
+  city: ULB.town,
+  pincode: "",
   houseNo: "",
   streetName: "",
   locality: "",
@@ -335,9 +341,12 @@ export default function SurveyFormPage() {
     if (!ward || !parcelNo.trim() || !propertyNo.trim() || !gisUseCode.trim()) {
       return isEdit ? form.getValues("surveyId") || "—" : "—"
     }
+    // Existing ids keep their ULB and parcel width (matches the API).
+    const current = isEdit ? parseGisSurveyId(form.getValues("surveyId")) : null
     try {
       return generateSurveyId({
-        ulbCode: "249044",
+        ulbCode: current?.ulbCode ?? PORTAL_ULB_CODE,
+        parcelDigits: current?.parcelNo.length ?? PORTAL_PARCEL_DIGITS,
         wardNo: ward.number,
         parcelNo: parcelNo.trim(),
         propertyNo: propertyNo.trim(),

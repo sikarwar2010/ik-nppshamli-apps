@@ -1,3 +1,4 @@
+import { ULB } from "@/lib/ulb-branding"
 /** Public citizen website base URL (apps/web). Used for staff links to online pay. */
 export function getCitizenWebUrl(): string {
   const configured = process.env.NEXT_PUBLIC_CITIZEN_WEB_URL?.trim()
@@ -7,10 +8,10 @@ export function getCitizenWebUrl(): string {
 
 /**
  * Hostname shown on official demand notices / payment instructions.
- * Falls back to www.npchhata.com when unset or localhost.
+ * Falls back to the ULB website host when unset or localhost.
  */
 export function getCitizenWebDisplayHost(baseUrl?: string): string {
-  const fallback = "www.npchhata.com"
+  const fallback = ULB.websiteHost
   const raw = (baseUrl ?? getCitizenWebUrl()).trim()
   if (!raw) return fallback
   try {

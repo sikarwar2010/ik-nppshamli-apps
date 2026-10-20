@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@workspace/ui/components/select"
 import { buildSelectItems } from "@workspace/ui/lib/select-items"
+import { ULB } from "@/lib/ulb-branding"
 
 type Ward = { id: string; name: string; number: number }
 
@@ -123,7 +124,7 @@ export function FilterControlPanel({
       <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">ULB</Label>
-          <Input value="Nagar Panchayat Chhata" readOnly className="bg-muted" />
+          <Input value={ULB.nameEn} readOnly className="bg-muted" />
         </div>
 
         <div className="space-y-1.5">

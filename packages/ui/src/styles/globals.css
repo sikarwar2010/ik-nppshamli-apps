@@ -140,4 +140,16 @@
       transition-duration: 0.01ms !important;
     }
   }
+  /* Touch devices: compact desktop controls grow to ~40px targets instead of
+     shrinking layouts. Desktop (fine pointer) density is unchanged. */
+  @media (pointer: coarse) {
+    [data-slot="button"],
+    [data-slot="select-trigger"],
+    [data-slot="input"] {
+      min-height: 2.5rem;
+    }
+    [data-slot="button"]:where([class*="size-6"], [class*="size-7"], [class*="size-8"]) {
+      min-width: 2.5rem;
+    }
+  }
 }

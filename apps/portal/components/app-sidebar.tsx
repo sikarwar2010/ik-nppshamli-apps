@@ -36,6 +36,7 @@ import {
 } from "@/components/app-nav"
 import { usePermission } from "@/hooks/use-permission"
 import { formatApiError } from "@/lib/format-api-error"
+import { ULB, ULB_LOCATION_LABEL } from "@/lib/ulb-branding"
 
 function canSee(
   item: NavItem,
@@ -149,11 +150,14 @@ export function AppSidebar() {
             />
           </div>
           <div className="min-w-0 group-data-[collapsible=icon]:hidden">
-            <p className="truncate text-sm font-semibold tracking-tight text-foreground">
-              Nagar Panchayat
+            <p
+              className="truncate text-sm font-semibold tracking-tight text-foreground"
+              title={ULB.nameEn}
+            >
+              {ULB.nameEn}
             </p>
             <p className="truncate text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-              Chhata · Mathura
+              {ULB_LOCATION_LABEL}
             </p>
           </div>
         </div>

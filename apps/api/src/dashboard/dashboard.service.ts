@@ -125,9 +125,10 @@ export class DashboardService {
         _sum: { amount: true },
       }),
       this.prisma.surveyAttachment.findMany({
+        // Only images whose binary exists in storage (excludes pending migrations).
         where: wardId
-          ? { survey: { wardId, deletedAt: null } }
-          : { survey: { deletedAt: null } },
+          ? { storageStatus: "AVAILABLE", survey: { wardId, deletedAt: null } }
+          : { storageStatus: "AVAILABLE", survey: { deletedAt: null } },
         orderBy: { createdAt: "desc" },
         take: 8,
         include: {

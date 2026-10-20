@@ -24,6 +24,7 @@ import { ImportDropzone } from "./_components/import-dropzone"
 import { ImportErrorsTable } from "./_components/import-errors-table"
 import { ImportKpis, ImportProgress } from "./_components/import-kpis"
 import { ImportStatusBadge } from "./_components/import-status-badge"
+import { ShamliImportReportView } from "./_components/shamli-import-report"
 import type { DuplicateStrategy, ImportJob } from "./_components/types"
 
 function ImportWizard() {
@@ -103,7 +104,7 @@ function ImportWizard() {
             />
             <fieldset className="space-y-2">
               <legend className="text-sm font-medium">
-                When Survey ID already exists
+                When a Survey / Property ID already exists
               </legend>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Label className="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 has-[:checked]:border-primary has-[:checked]:bg-primary/5">
@@ -172,7 +173,7 @@ function ImportWizard() {
                 </p>
               ) : null}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {job ? <ImportStatusBadge status={job.status} /> : null}
               {canCreate ? (
                 <Button
@@ -212,7 +213,11 @@ function ImportWizard() {
               </div>
             ) : job ? (
               <>
-                <ImportKpis job={job} />
+                {job.report ? (
+                  <ShamliImportReportView report={job.report} />
+                ) : (
+                  <ImportKpis job={job} />
+                )}
                 {job.status === "PROCESSING" ? (
                   <ImportProgress
                     processed={job.processedRows}

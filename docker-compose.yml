@@ -2,44 +2,68 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: mainpuri-postgres
+    container_name: shamli-postgres
     restart: unless-stopped
     ports:
       # Host 5432 is often taken by other local stacks (e.g. api-survey-local).
-      - "5433:5432"
+      - "${SHAMLI_PG_PORT:-5433}:5432"
     environment:
-      POSTGRES_USER: mainpuri
-      POSTGRES_PASSWORD: mainpuri
-      POSTGRES_DB: mainpuri
+      POSTGRES_USER: shamli
+      POSTGRES_PASSWORD: shamli
+      POSTGRES_DB: shamli
     volumes:
-      - mainpuri_pg_data:/var/lib/postgresql/data
+      - shamli_pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U mainpuri -d mainpuri" ]
+      test: [ "CMD-SHELL", "pg_isready -U shamli -d shamli" ]
       interval: 5s
       timeout: 5s
       retries: 10
 
   redis:
     image: redis:7-alpine
-    container_name: mainpuri-redis
+    container_name: shamli-redis
     restart: unless-stopped
     ports:
-      - "6380:6379"
+      - "${SHAMLI_REDIS_PORT:-6380}:6379"
     volumes:
-      - mainpuri_redis_data:/data
+      - shamli_redis_data:/data
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 5s
       retries: 10
 
+  # S3-compatible object storage for survey/property images (STORAGE_DRIVER=minio).
+  # API :9000 is bound to localhost only; console :9001 is local-dev only.
+  # Upstream stopped publishing community images after this release — override
+  # MINIO_IMAGE if you build/mirror a newer one.
+  minio:
+    image: ${MINIO_IMAGE:-quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z}
+    container_name: shamli-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-shamli-minio-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-shamli-minio-dev-password}
+    volumes:
+      - shamli_minio_data:/data
+    healthcheck:
+      test: [ "CMD", "mc", "ready", "local" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   mailpit:
     image: axllent/mailpit:latest
-    container_name: mainpuri-mailpit
+    container_name: shamli-mailpit
     restart: unless-stopped
     ports:
-      - "8025:8025"
-      - "1025:1025"
+      # Host 1025/8025 are often taken by other local stacks (e.g. nppdhanaura-mailpit).
+      - "${SHAMLI_MAILPIT_UI_PORT:-8026}:8025"
+      - "${SHAMLI_MAILPIT_SMTP_PORT:-1026}:1025"
 
   # Production-like local stack: docker compose --profile app up --build
   # Uses the same Dockerfiles as production. Leave this profile off for
@@ -57,13 +81,22 @@ services:
     environment:
       NODE_ENV: production
       PORT: "4000"
-      DATABASE_URL: postgresql://mainpuri:mainpuri@postgres:5432/mainpuri?schema=public
+      DATABASE_URL: postgresql://shamli:shamli@postgres:5432/shamli?schema=public
       REDIS_URL: redis://redis:6379
       STORAGE_DIR: /app/uploads
+      STORAGE_DRIVER: minio
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: "9000"
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-shamli-minio-admin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-shamli-minio-dev-password}
+      MINIO_BUCKET: shamli-survey-images
+      ULB_CODE: "800645"
+      SURVEY_PARCEL_DIGITS: "5"
       CORS_ORIGIN: http://localhost:3000,http://localhost:3001
       PUBLIC_APP_URL: http://localhost:3000
       SESSION_SECRET: ${SESSION_SECRET:-change-me-to-a-long-random-secret-at-least-32-chars}
-      SESSION_COOKIE_NAME: mainpuri_session
+      SESSION_COOKIE_NAME: shamli_session
       API_BUILD_ID: local
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-sikarwar2010@gmail.com}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-change-me-seed-admin-password}
@@ -74,6 +107,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_healthy
     healthcheck:
       test: [ "CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/v1/health/ready').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" ]
       interval: 10s
@@ -83,7 +118,7 @@ services:
     networks:
       default:
         aliases:
-          - mainpuri-api
+          - shamli-api
 
   portal:
     profiles: [ "app" ]
@@ -91,7 +126,7 @@ services:
       context: .
       dockerfile: docker/portal.Dockerfile
       args:
-        API_INTERNAL_URL: http://mainpuri-api:4000
+        API_INTERNAL_URL: http://shamli-api:4000
         NEXT_PUBLIC_APP_URL: http://localhost:3000
         NEXT_PUBLIC_CITIZEN_WEB_URL: http://localhost:3001
     restart: unless-stopped
@@ -101,13 +136,14 @@ services:
       NODE_ENV: production
       PORT: "3000"
       HOSTNAME: 0.0.0.0
-      API_INTERNAL_URL: http://mainpuri-api:4000
+      API_INTERNAL_URL: http://shamli-api:4000
       NEXT_PUBLIC_APP_URL: http://localhost:3000
-      SESSION_COOKIE_NAME: mainpuri_session
+      SESSION_COOKIE_NAME: shamli_session
     depends_on:
       api:
         condition: service_healthy
 
 volumes:
-  mainpuri_pg_data:
-  mainpuri_redis_data:
+  shamli_pg_data:
+  shamli_redis_data:
+  shamli_minio_data:

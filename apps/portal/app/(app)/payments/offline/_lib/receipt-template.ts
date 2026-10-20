@@ -4,6 +4,7 @@
  */
 
 import type { StaffPaymentReceipt } from "@workspace/types"
+import { ULB } from "@/lib/ulb-branding"
 
 function esc(value: unknown): string {
   const s = String(value ?? "—")
@@ -250,7 +251,7 @@ body {
         <img src="${esc(logoUrl)}" alt="Uttar Pradesh Government" />
       </div>
       <div class="header-center">
-        <div class="office-en">NAGAR PANCHAYAT CHHATA, MATHURA</div>
+        <div class="office-en">${esc(`${ULB.nameEn}, ${ULB.district}`.toUpperCase())}</div>
         <div class="office-loc">Uttar Pradesh, India</div>
         <div class="title-en">Property Tax Payment Receipt</div>
         <div class="title-hi">सम्पत्ति कर भुगतान रसीद</div>
@@ -390,7 +391,7 @@ body {
 
     <footer class="footer">
       This receipt confirms offline / counter collection of property tax by
-      Nagar Panchayat Chhata, Mathura. Retain for your records.<br />
+      ${esc(ULB.nameEn)}, ${esc(ULB.district)}. Retain for your records.<br />
       Printed: ${esc(printedAt)}
     </footer>
   </article>

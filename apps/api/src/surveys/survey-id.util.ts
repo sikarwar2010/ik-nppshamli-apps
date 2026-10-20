@@ -1,13 +1,15 @@
 import { ConflictException } from "@nestjs/common"
 import type { Prisma, Ward } from "@prisma/client"
 import {
-  CHHATA_ULB_CODE,
+  SHAMLI_ULB_CODE,
+  DEFAULT_PARCEL_DIGITS,
   buildSurveyIdFromRecord,
   generateSurveyId,
   normalizeGisUseCode,
   normalizeParcelNo,
   normalizePropertyNo,
   parseGisSurveyId,
+  replacePlaceholderWardSegment,
 } from "@workspace/types"
 
 export type SurveyIdentityInput = {
@@ -19,15 +21,21 @@ export type SurveyIdentityInput = {
 }
 
 export type ResolvedSurveyIdentity = {
-  parcelNo: string
-  propertyNo: string
+  parcelNo: string | null
+  propertyNo: string | null
   gisUseCode: string
   surveyId: string
   ulbCode: string
 }
 
 export function getUlbCode(): string {
-  return process.env.ULB_CODE?.trim() || CHHATA_ULB_CODE
+  return process.env.ULB_CODE?.trim() || SHAMLI_ULB_CODE
+}
+
+/** Minimum parcel digits for new GIS ids (Shamli 5). */
+export function getParcelDigits(): number {
+  const n = Number(process.env.SURVEY_PARCEL_DIGITS)
+  return Number.isInteger(n) && n >= 1 && n <= 12 ? n : DEFAULT_PARCEL_DIGITS
 }
 
 export function resolveSurveyIdentity(
@@ -45,7 +53,22 @@ export function resolveSurveyIdentity(
       ? parseGisSurveyId(input.surveyId)
       : null
 
-  const ulbCode = getUlbCode()
+  // Imported drafts keep non-GIS ids (`117`, `TEMP-MOBILE-…`) until an editor
+  // assigns a GIS use code; regenerating them would invent an identifier.
+  if (current && !parsed && !input.gisUseCode?.trim()) {
+    return {
+      surveyId: current.surveyId,
+      parcelNo: input.parcelNo?.trim() || current.parcelNo,
+      propertyNo: input.propertyNo?.trim() || current.propertyNo,
+      gisUseCode: "",
+      ulbCode: getUlbCode(),
+    }
+  }
+
+  // Existing ids keep their ULB and parcel width; new ids use configuration.
+  const ulbCode = parsed && current ? parsed.ulbCode : getUlbCode()
+  const parcelDigits =
+    parsed && current ? parsed.parcelNo.length : getParcelDigits()
   const parcelRaw =
     input.parcelNo ?? current?.parcelNo ?? parsed?.parcelNo ?? ""
   const propertyRaw =
@@ -53,7 +76,7 @@ export function resolveSurveyIdentity(
   const gisUseRaw =
     input.gisUseCode ?? parsed?.gisUseCode ?? ""
 
-  const parcelNo = normalizeParcelNo(parcelRaw)
+  const parcelNo = normalizeParcelNo(parcelRaw, parcelDigits)
   const propertyNo = normalizePropertyNo(propertyRaw)
   const gisUseCode = normalizeGisUseCode(gisUseRaw)
   const surveyId = generateSurveyId({
@@ -62,6 +85,7 @@ export function resolveSurveyIdentity(
     parcelNo,
     propertyNo,
     gisUseCode,
+    parcelDigits,
   })
 
   return { parcelNo, propertyNo, gisUseCode, surveyId, ulbCode }
@@ -75,31 +99,23 @@ export type SurveyIdRecord = {
   deletedAt?: Date | null
 }
 
-/** Canonical GIS survey id from ward + parcel/property (ignores placeholder `000` ward segment). */
+/**
+ * Expected id on read: only a legacy placeholder `000` ward segment is
+ * replaced. ULB, parcel width, unit and use code are never rewritten on read —
+ * regenerating them corrupted ids from ULBs with a different parcel width.
+ */
 export function getExpectedSurveyIdFromRecord(
   survey: Pick<SurveyIdRecord, "surveyId" | "parcelNo" | "propertyNo">,
   wardNumber: number
 ): string {
-  const parsed = parseGisSurveyId(survey.surveyId)
-  return buildSurveyIdFromRecord({
-    surveyId: survey.surveyId,
-    wardNumber,
-    parcelNo: survey.parcelNo,
-    propertyNo: survey.propertyNo,
-    gisUseCode: parsed?.gisUseCode,
-    ulbCode: getUlbCode(),
-  })
+  return replacePlaceholderWardSegment(survey.surveyId, wardNumber)
 }
 
 export function surveyIdNeedsRepair(
   survey: Pick<SurveyIdRecord, "surveyId" | "parcelNo" | "propertyNo">,
   wardNumber: number
 ): boolean {
-  try {
-    return survey.surveyId !== getExpectedSurveyIdFromRecord(survey, wardNumber)
-  } catch {
-    return false
-  }
+  return survey.surveyId !== getExpectedSurveyIdFromRecord(survey, wardNumber)
 }
 
 export function verifySurveyIdMatchesRecord(
@@ -110,6 +126,7 @@ export function verifySurveyIdMatchesRecord(
   gisUseCode: string
 ): boolean {
   const expected = buildSurveyIdFromRecord({
+    surveyId,
     wardNumber,
     parcelNo,
     propertyNo,
@@ -118,6 +135,7 @@ export function verifySurveyIdMatchesRecord(
   })
   return expected === surveyId
 }
+
 
 /** Repair legacy Excel placeholder ward segments (e.g. `249044-000-...` → `249044-001-...`). */
 export async function repairSurveyIdIfNeeded(

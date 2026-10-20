@@ -132,7 +132,9 @@ export function assertFileAccess(
     return
   }
 
-  if (key.startsWith("surveys/")) {
+  // `property-images/` holds imported/migrated survey photos keyed by business
+  // id; callers must pass the owning survey (no id is derived from the key).
+  if (key.startsWith("surveys/") || key.startsWith("property-images/")) {
     const surveyId = file.surveyId ?? parseSurveyIdFromObjectKey(key)
     if (!surveyId) {
       deny("Invalid survey file reference")

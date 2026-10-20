@@ -61,6 +61,8 @@ describe("GET /api/v1/auth/me stability (e2e)", () => {
         checkDependencies: async () => ({
           postgres: true,
           redis: true,
+          storage: true,
+          storageDriver: "local",
           routesRegistered: true,
         }),
       })

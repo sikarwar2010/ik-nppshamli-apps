@@ -4,11 +4,12 @@ import { AuthModule } from "../auth/auth.module"
 import { ImportWorker } from "./import.worker"
 import { ExportsController, ImportsController } from "./imports.controller"
 import { ImportsService } from "./imports.service"
+import { ShamliImportService } from "./shamli-import.service"
 
 @Module({
   imports: [AuthModule],
   controllers: [ImportsController, ExportsController],
-  providers: [ImportsService, ImportWorker],
-  exports: [ImportsService],
+  providers: [ImportsService, ShamliImportService, ImportWorker],
+  exports: [ImportsService, ShamliImportService],
 })
 export class ImportsModule {}

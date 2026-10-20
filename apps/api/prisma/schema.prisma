@@ -254,6 +254,16 @@ model Survey {
   toiletType               String?
   hasMunicipalWasteService Boolean?
 
+  // Source-workbook fields (Shamli survey export). Raw text preserved as-is.
+  sourceStatus    String?
+  surveyorName    String?
+  assessmentYear  String?
+  oldPropertyNo   String?
+  propertyType    String?
+  latitude        Decimal? @db.Decimal(10, 7)
+  longitude       Decimal? @db.Decimal(10, 7)
+  sourceRowNumber Int?
+
   sourceExtras Json?
   importJobId  String?
 
@@ -280,6 +290,7 @@ model Survey {
   @@index([wardId, surveyedAt])
   @@index([wardId, parcelNo, propertyNo])
   @@index([dataQualityStatus])
+  @@index([importJobId])
   @@map("survey")
 }
 
@@ -302,6 +313,12 @@ model SurveyFloor {
   @@map("survey_floor")
 }
 
+enum AttachmentStorageStatus {
+  PENDING_MIGRATION
+  AVAILABLE
+  FAILED
+}
+
 model SurveyAttachment {
   id               String   @id @default(cuid())
   surveyId         String
@@ -314,8 +331,22 @@ model SurveyAttachment {
   uploadedById     String?
   uploadedBy       User?    @relation(fields: [uploadedById], references: [id])
   createdAt        DateTime @default(now())
+  updatedAt        DateTime @default(now()) @updatedAt
 
+  // Imported images (e.g. "Front View") and their legacy source for migration.
+  imageType         String?
+  sourceUrl         String?
+  sourceRowNumber   Int?
+  importJobId       String?
+  storageStatus     AttachmentStorageStatus @default(AVAILABLE)
+  checksumSha256    String?
+  migrationAttempts Int                     @default(0)
+  migrationError    String?
+  migratedAt        DateTime?
+
+  @@unique([surveyId, sourceUrl])
   @@index([surveyId])
+  @@index([storageStatus])
   @@map("survey_attachment")
 }
 
@@ -356,6 +387,8 @@ model ImportJob {
   insertedRows      Int               @default(0)
   updatedRows       Int               @default(0)
   errorFileKey      String?
+  /// Validation / reconciliation summary (sheet counts, warnings, duplicates).
+  report            Json?
   startedAt         DateTime?
   completedAt       DateTime?
   createdById       String?
@@ -375,6 +408,7 @@ model ImportError {
   importJobId String
   importJob   ImportJob @relation(fields: [importJobId], references: [id], onDelete: Cascade)
   rowNumber   Int
+  sheet       String?
   surveyId    String?
   field       String?
   message     String
@@ -545,35 +579,35 @@ enum PaymentStatus {
 }
 
 model Payment {
-  id                String        @id @default(cuid())
-  paymentReference  String        @unique
-  merchTxnId        String?       @unique
-  atomTxnId         String?       @unique
+  id                String          @id @default(cuid())
+  paymentReference  String          @unique
+  merchTxnId        String?         @unique
+  atomTxnId         String?         @unique
   surveyId          String?
-  survey            Survey?       @relation(fields: [surveyId], references: [id])
+  survey            Survey?         @relation(fields: [surveyId], references: [id])
   wardId            String?
-  ward              Ward?         @relation(fields: [wardId], references: [id])
+  ward              Ward?           @relation(fields: [wardId], references: [id])
   assessmentYearId  String?
   assessmentYear    ReferenceEntry? @relation("PaymentAssessmentYear", fields: [assessmentYearId], references: [id])
   payerName         String?
   payerMobile       String?
   payerEmail        String?
-  amount            Decimal       @db.Decimal(14, 2)
-  currency          String        @default("INR")
+  amount            Decimal         @db.Decimal(14, 2)
+  currency          String          @default("INR")
   paymentMode       PaymentMode
-  status            PaymentStatus @default(INITIATED)
+  status            PaymentStatus   @default(INITIATED)
   gateway           String?
   gatewayReference  String?
-  receiptNumber     String?       @unique
+  receiptNumber     String?         @unique
   collectionDate    DateTime?
   chequeDdReference String?
   remarks           String?
   collectedById     String?
-  collectedBy       User?         @relation("PaymentCollectedBy", fields: [collectedById], references: [id])
+  collectedBy       User?           @relation("PaymentCollectedBy", fields: [collectedById], references: [id])
   attachmentKey     String?
-  refundableAmount  Decimal?      @db.Decimal(14, 2)
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  refundableAmount  Decimal?        @db.Decimal(14, 2)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
   transactions PaymentTransaction[]
   callbacks    PaymentCallback[]

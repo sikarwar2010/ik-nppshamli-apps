@@ -33,6 +33,7 @@ import {
 import { api } from "@/lib/api"
 
 import { printOfflinePaymentReceipt } from "./_lib/receipt-template"
+import { ULB } from "@/lib/ulb-branding"
 
 const PAYMENT_MODES = ["CASH", "CHEQUE", "DD", "UPI_MANUAL", "OTHER"] as const
 const MODES_NEEDING_REF = new Set(["CHEQUE", "DD", "UPI_MANUAL"])
@@ -99,7 +100,7 @@ function buildAddress(s: SurveyDetail): string {
     s.streetName,
     s.locality,
     s.colony,
-    s.city ?? "Nagar Panchayat Chhata",
+    s.city ?? ULB.nameEn,
     s.pincode,
   ].filter(Boolean)
   return parts.length > 0 ? parts.join(", ") : "—"

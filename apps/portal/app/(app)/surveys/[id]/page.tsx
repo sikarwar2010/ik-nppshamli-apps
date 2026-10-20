@@ -63,6 +63,8 @@ import {
   toNumber,
 } from "@/lib/survey-format"
 
+import { SurveyImages, type SurveyImage } from "../_components/survey-images"
+
 type Neighbor = { id: string; surveyId: string }
 
 type FloorRow = {
@@ -132,8 +134,17 @@ type SurveyDetail = {
   waterConnectionIdType: string | null
   toiletType: string | null
   hasMunicipalWasteService: boolean | null
+  sourceStatus: string | null
+  surveyorName: string | null
+  assessmentYear: string | null
+  oldPropertyNo: string | null
+  propertyType: string | null
+  latitude: string | null
+  longitude: string | null
+  sourceRowNumber: number | null
   ward: { number: number; name: string }
   floors: FloorRow[]
+  attachments?: SurveyImage[]
   createdBy?: { name: string } | null
   updatedBy?: { name: string } | null
   createdAt?: string
@@ -381,7 +392,7 @@ export default function SurveyDetailPage() {
       </div>
 
       <form
-        className="flex max-w-md items-center gap-2"
+        className="flex w-full max-w-md items-center gap-2"
         onSubmit={(e) => {
           e.preventDefault()
           void goToParcel()
@@ -412,7 +423,7 @@ export default function SurveyDetailPage() {
 
       <Card className="shadow-sm">
         <CardContent className="grid gap-4 pt-1 sm:grid-cols-2 lg:grid-cols-5">
-          <SummaryCell label="Survey ID" value={s.surveyId} mono />
+          <SummaryCell label="Property ID" value={s.surveyId} mono />
           <SummaryCell label="ULB Name" value={ULB_NAME} />
           <SummaryCell label="Ward No" value={String(s.ward.number)} />
           <SummaryCell label="Parcel No" value={parcel} />
@@ -422,10 +433,21 @@ export default function SurveyDetailPage() {
 
       <SectionCard title="Survey & Owner">
         <FieldGrid>
-          <Field label="Survey Id" value={s.surveyId} />
+          <Field label="Property Id" value={s.surveyId} />
+          <Field label="Survey Status (source)" value={s.sourceStatus} />
+          <Field label="Surveyor Name" value={s.surveyorName} />
+          <Field label="Assessment Year" value={s.assessmentYear} />
           <Field
             label="Date of Survey"
-            value={s.surveyedAt ? new Date(s.surveyedAt).toLocaleString() : "—"}
+            value={
+              s.surveyedAt
+                ? new Date(s.surveyedAt).toLocaleString("en-IN", {
+                    timeZone: "Asia/Kolkata",
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })
+                : "—"
+            }
           />
           <Field
             label="Owner Name"
@@ -450,8 +472,10 @@ export default function SurveyDetailPage() {
       <SectionCard title="Parcel">
         <FieldGrid>
           <Field label="Parcel No" value={parcel} />
-          <Field label="Property No" value={unit} />
+          <Field label="Unit / Property No" value={unit} />
+          <Field label="Old Property Number" value={s.oldPropertyNo} />
           <Field label="GIS Use Code" value={gis?.useLetter ?? "—"} />
+          <Field label="Constructed Date" value={s.constructedDate} />
         </FieldGrid>
       </SectionCard>
 
@@ -486,6 +510,7 @@ export default function SurveyDetailPage() {
             label="Property Ownership"
             value={formatCatalogDisplay(s.propertyOwnership)}
           />
+          <Field label="Property Type" value={s.propertyType} />
           <Field
             label="Property Use"
             value={formatCatalogDisplay(s.propertyUse)}
@@ -551,8 +576,8 @@ export default function SurveyDetailPage() {
             : "—"}
         </p>
 
-        <div className="overflow-hidden rounded-xl border">
-          <Table>
+        <div className="overflow-x-auto rounded-xl border">
+          <Table className="min-w-[40rem]">
             <TableHeader>
               <TableRow>
                 <TableHead>S. No.</TableHead>
@@ -616,10 +641,43 @@ export default function SurveyDetailPage() {
         </div>
       </SectionCard>
 
+      <SectionCard title="Location">
+        <FieldGrid>
+          <Field label="Latitude" value={s.latitude} />
+          <Field label="Longitude" value={s.longitude} />
+          {s.latitude && s.longitude ? (
+            <div className="flex items-center sm:col-span-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="min-h-10 cursor-pointer"
+                render={
+                  <a
+                    href={`https://www.openstreetmap.org/?mlat=${s.latitude}&mlon=${s.longitude}#map=19/${s.latitude}/${s.longitude}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  />
+                }
+              >
+                Open location on map
+              </Button>
+            </div>
+          ) : null}
+        </FieldGrid>
+      </SectionCard>
+
+      <SectionCard title="Property Images" id="images">
+        <SurveyImages
+          surveyId={s.id}
+          images={s.attachments ?? []}
+          canEdit={canEdit}
+        />
+      </SectionCard>
+
       <SectionCard title="Municipal Services">
         <FieldGrid>
           <Field
-            label="Is Muncipal Water Supply"
+            label="Is Municipal Water Supply"
             value={yn(s.hasMunicipalWaterSupply)}
           />
           <Field
@@ -632,7 +690,7 @@ export default function SurveyDetailPage() {
           />
           <Field label="Toilet Type" value={s.toiletType} />
           <Field
-            label="Is Muncipal Waste Service"
+            label="Is Municipal Waste Service"
             value={yn(s.hasMunicipalWasteService)}
           />
           <Field label="Alternate Water" value={yn(s.hasAlternateWater)} />
@@ -642,8 +700,8 @@ export default function SurveyDetailPage() {
 
       {canAudit ? (
         <SectionCard title="Audit History" id="audit-history">
-          <div className="overflow-hidden rounded-xl border">
-            <Table>
+          <div className="overflow-x-auto rounded-xl border">
+            <Table className="min-w-[36rem]">
               <TableHeader>
                 <TableRow>
                   <TableHead>When</TableHead>
@@ -798,7 +856,7 @@ function SummaryCell({
       <p
         className={cn(
           "mt-1 text-sm font-semibold",
-          mono && "font-mono text-xs sm:text-sm"
+          mono && "font-mono text-xs break-all sm:text-sm"
         )}
       >
         {dash(value)}

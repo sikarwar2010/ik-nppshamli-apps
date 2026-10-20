@@ -26,9 +26,9 @@ export default async function AppLayout({
       <PermissionProvider initialError={session.error}>
         <SidebarProvider>
           <AppSidebar />
-          <SidebarInset>
+          <SidebarInset className="min-w-0">
             <AppHeader />
-            <div className="flex flex-1 flex-col gap-4 p-4 md:gap-6 md:p-6 lg:p-8">
+            <div className="flex min-w-0 flex-1 flex-col gap-4 p-4 md:gap-6 md:p-6 lg:p-8">
               <ApiUnavailablePanel error={session.error} />
             </div>
           </SidebarInset>
@@ -41,9 +41,9 @@ export default async function AppLayout({
     <PermissionProvider initialUser={session.user}>
       <SidebarProvider>
         <AppSidebar />
-        <SidebarInset>
+        <SidebarInset className="min-w-0">
           <AppHeader />
-          <div className="flex flex-1 flex-col gap-4 p-4 md:gap-6 md:p-6 lg:p-8">
+          <div className="flex min-w-0 flex-1 flex-col gap-4 p-4 md:gap-6 md:p-6 lg:p-8">
             <RouteAccessGate>{children}</RouteAccessGate>
           </div>
         </SidebarInset>

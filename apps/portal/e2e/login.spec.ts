@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test"
+import { ULB } from "../lib/ulb-branding"
 
 test.describe("portal smoke", () => {
   test("login page renders staff sign-in", async ({ page }) => {
     await page.goto("/login")
-    await expect(page.getByText("Nagar Panchayat Chhata")).toBeVisible()
+    await expect(page.getByText(ULB.nameEn).first()).toBeVisible()
     await expect(page.getByText(/Staff portal/i)).toBeVisible()
     await expect(page.getByLabel(/Email/i)).toBeVisible()
     await expect(page.getByLabel(/Password/i)).toBeVisible()

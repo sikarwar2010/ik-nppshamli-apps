@@ -49,8 +49,8 @@ export function FieldShell({
   const errorId = `${id}-error`
   const hintId = `${id}-hint`
   return (
-    <div className={cn("space-y-1.5", className)}>
-      <Label htmlFor={id}>
+    <div className={cn("min-w-0 space-y-1.5", className)}>
+      <Label htmlFor={id} className="flex-wrap leading-snug">
         {label}
         {required ? (
           <span className="ml-0.5 text-destructive" aria-hidden>
@@ -229,7 +229,7 @@ export function AreaPairField({
   className?: string
 }) {
   return (
-    <div className={cn("grid gap-3 sm:col-span-2 sm:grid-cols-2", className)}>
+    <div className={cn("grid min-w-0 grid-cols-1 gap-3 sm:col-span-2 sm:grid-cols-2", className)}>
       <FieldShell id={sqFtId} label={`${label} SqFt`} error={error}>
         <Input
           id={sqFtId}

@@ -7,8 +7,6 @@ import {
   UnauthorizedException,
 } from "@nestjs/common"
 import { createHmac, timingSafeEqual } from "node:crypto"
-import { createReadStream, existsSync } from "node:fs"
-import { mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import type { Readable } from "node:stream"
 
@@ -19,6 +17,14 @@ import {
   type FileResource,
   type SurveyResource,
 } from "../auth/resource-access"
+import { loadStorageConfig, type StorageDriverName } from "./storage-config"
+import {
+  LocalDiskDriver,
+  MinioDriver,
+  type ObjectMetadata,
+  type ObjectStat,
+  type ObjectStorageDriver,
+} from "./storage-drivers"
 
 const MIME_BY_EXT: Record<string, string> = {
   ".gif": "image/gif",
@@ -35,30 +41,64 @@ const MIME_BY_EXT: Record<string, string> = {
 export class StorageService implements OnModuleInit {
   private readonly logger = new Logger(StorageService.name)
   private root = path.resolve(process.env.STORAGE_DIR ?? "uploads")
+  private driver: ObjectStorageDriver = this.createDriver()
+  private ready: Promise<void> | null = null
 
-  onModuleInit() {
-    this.root = path.resolve(process.env.STORAGE_DIR ?? "uploads")
-    this.logger.log(`Local file storage at ${this.root}`)
+  async onModuleInit() {
+    this.driver = this.createDriver()
+    this.ready = null
+    if (this.driver.name === "minio") {
+      this.logger.log(`MinIO object storage, bucket "${this.driver.bucket}"`)
+    } else {
+      this.logger.log(`Local file storage at ${this.root}`)
+    }
+    try {
+      await this.ensureBucket()
+    } catch (err) {
+      // Keep the API up; /api/v1/health/ready reports storage=false and the
+      // next upload retries bucket initialization.
+      this.logger.error(`Storage not ready: ${describeError(err)}`)
+    }
+  }
+
+  get driverName(): StorageDriverName {
+    return this.driver.name
+  }
+
+  /** Bucket recorded on SurveyAttachment rows (`local` for disk storage). */
+  get bucketName(): string {
+    return this.driver.bucket
   }
 
   async ensureBucket() {
-    await mkdir(this.root, { recursive: true })
+    if (!this.ready) {
+      this.ready = this.driver.ensureReady().catch((err: unknown) => {
+        this.ready = null
+        throw err
+      })
+    }
+    await this.ready
   }
 
   async putObject(
     objectKey: string,
     buffer: Buffer,
-    _mimeType?: string
+    mimeType?: string,
+    metadata?: ObjectMetadata
   ): Promise<string> {
+    this.assertValidObjectKey(objectKey)
     await this.ensureBucket()
-    const filePath = this.resolveObjectPath(objectKey)
-    await mkdir(path.dirname(filePath), { recursive: true })
-    await writeFile(filePath, buffer)
+    await this.driver.put(
+      objectKey,
+      buffer,
+      mimeType || this.guessMime(objectKey),
+      metadata
+    )
     return objectKey
   }
 
   async getObject(objectKey: string): Promise<Buffer> {
-    const stream = this.createObjectStream(objectKey)
+    const stream = await this.openObjectStream(objectKey)
     const chunks: Buffer[] = []
     for await (const chunk of stream) {
       chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
@@ -66,15 +106,31 @@ export class StorageService implements OnModuleInit {
     return Buffer.concat(chunks)
   }
 
-  createObjectStream(objectKey: string): Readable {
-    const filePath = this.resolveObjectPath(objectKey)
-    if (!existsSync(filePath)) {
+  async openObjectStream(objectKey: string): Promise<Readable> {
+    this.assertValidObjectKey(objectKey)
+    const stream = await this.driver.openStream(objectKey)
+    if (!stream) {
       throw new NotFoundException({
         code: "FILE_NOT_FOUND",
         message: "File not found",
       })
     }
-    return createReadStream(filePath)
+    return stream
+  }
+
+  /** Object size / content type / metadata, or null when missing. */
+  async statObject(objectKey: string): Promise<ObjectStat | null> {
+    this.assertValidObjectKey(objectKey)
+    return this.driver.stat(objectKey)
+  }
+
+  async deleteObject(objectKey: string): Promise<void> {
+    this.assertValidObjectKey(objectKey)
+    await this.driver.delete(objectKey)
+  }
+
+  async isHealthy(): Promise<boolean> {
+    return this.driver.ping()
   }
 
   guessMime(objectKey: string): string {
@@ -85,7 +141,7 @@ export class StorageService implements OnModuleInit {
   }
 
   async getSignedUrl(objectKey: string, expirySeconds = 300): Promise<string> {
-    this.resolveObjectPath(objectKey)
+    this.assertValidObjectKey(objectKey)
     const exp = Math.floor(Date.now() / 1000) + expirySeconds
     const sig = this.sign(objectKey, exp)
     const params = new URLSearchParams({
@@ -134,7 +190,7 @@ export class StorageService implements OnModuleInit {
         message: "Invalid file link",
       })
     }
-    this.resolveObjectPath(objectKey)
+    this.assertValidObjectKey(objectKey)
   }
 
   private sign(objectKey: string, exp: number): string {
@@ -152,14 +208,25 @@ export class StorageService implements OnModuleInit {
     )
   }
 
-  resolveObjectPath(objectKey: string): string {
+  /** Rejects empty keys, traversal, and absolute paths for every driver. */
+  assertValidObjectKey(objectKey: string): string {
     const normalized = objectKey.replaceAll("\\", "/").replace(/^\/+/, "")
-    if (!normalized || normalized.includes("..")) {
+    if (
+      !normalized ||
+      normalized.includes("..") ||
+      normalized.length > 900 ||
+      [...normalized].some((ch) => ch.charCodeAt(0) < 0x20)
+    ) {
       throw new BadRequestException({
         code: "INVALID_OBJECT_KEY",
         message: "Invalid object key",
       })
     }
+    return normalized
+  }
+
+  resolveObjectPath(objectKey: string): string {
+    const normalized = this.assertValidObjectKey(objectKey)
     const full = path.resolve(this.root, normalized)
     const rootWithSep = this.root.endsWith(path.sep)
       ? this.root
@@ -172,4 +239,16 @@ export class StorageService implements OnModuleInit {
     }
     return full
   }
+
+  private createDriver(): ObjectStorageDriver {
+    const config = loadStorageConfig()
+    this.root = path.resolve(config.storageDir)
+    if (config.driver === "minio") return new MinioDriver(config.minio)
+    return new LocalDiskDriver(this.root, (key) => this.resolveObjectPath(key))
+  }
+}
+
+function describeError(err: unknown): string {
+  if (err instanceof Error) return err.message
+  return String(err)
 }

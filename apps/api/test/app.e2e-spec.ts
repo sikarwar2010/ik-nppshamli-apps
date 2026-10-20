@@ -30,6 +30,8 @@ describe("Health (e2e)", () => {
         checkDependencies: async () => ({
           postgres: true,
           redis: true,
+          storage: true,
+          storageDriver: "local",
           routesRegistered: true,
         }),
       })

@@ -4,8 +4,13 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common"
-import { DuplicateStrategy, ImportJobStatus, Prisma } from "@prisma/client"
-import { resolveImportSurveyId } from "@workspace/types"
+import {
+  DuplicateStrategy,
+  ImportJobStatus,
+  Prisma,
+  SurveyStatus,
+} from "@prisma/client"
+import { SHAMLI_ULB_CODE, resolveImportSurveyId } from "@workspace/types"
 import { Queue } from "bullmq"
 import ExcelJS from "exceljs"
 import IORedis from "ioredis"
@@ -24,7 +29,6 @@ import {
   cell,
   detectPresetFromHeaders,
   extractWardNumber,
-  getMapping,
   normalizeParcelNo,
   normalizePropertyNo,
   parseBool,
@@ -37,6 +41,16 @@ import {
   shouldPruneOrphanCount,
   shouldReconcileWardAfterImport,
 } from "./import-reconcile"
+import {
+  buildShamliExportFilename,
+  buildShamliExportWorkbook,
+} from "./shamli-excel-export"
+import { ShamliImportService } from "./shamli-import.service"
+import {
+  SHAMLI_PRESET,
+  isShamliSurveyHeaderRow,
+  type WorkbookIssue,
+} from "./shamli-workbook"
 import {
   buildSurveyExportFilename,
   buildSurveyExportWorkbook,
@@ -52,7 +66,8 @@ export class ImportsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
-    private readonly audit: AuditService
+    private readonly audit: AuditService,
+    private readonly shamli: ShamliImportService
   ) {
     try {
       const connection = new IORedis(
@@ -72,7 +87,15 @@ export class ImportsService {
     user: AuthUser,
     duplicateStrategy: DuplicateStrategy = "UPDATE"
   ) {
-    const objectKey = `imports/${Date.now()}-${file.originalname}`
+    assertExcelUpload(file)
+    if (!Object.values(DuplicateStrategy).includes(duplicateStrategy)) {
+      throw new BadRequestException({
+        code: "INVALID_DUPLICATE_STRATEGY",
+        message: "duplicateStrategy must be SKIP, UPDATE or CREATE",
+      })
+    }
+    const safeName = file.originalname.replace(/[^\w.-]+/g, "_").slice(0, 180)
+    const objectKey = `imports/${Date.now()}-${safeName}`
     await this.storage.putObject(objectKey, file.buffer, file.mimetype)
 
     const workbook = new ExcelJS.Workbook()
@@ -87,48 +110,10 @@ export class ImportsService {
     for (let col = 1; col <= columnCount; col++) {
       headers[col - 1] = cell([headerRow?.getCell(col)?.value], 0)
     }
-    const mappingPreset = detectPresetFromHeaders(headers, columnCount)
-
-    // #region agent log
-    {
-      const floorsIdx = headers.findIndex((h) =>
-        /^floors$/i.test((h ?? "").trim())
-      )
-      const aadhaarIdx = headers.findIndex((h) => /aadhaar/i.test(h ?? ""))
-      const map = getMapping(mappingPreset)
-      fetch(
-        "http://127.0.0.1:7787/ingest/931237b4-c66c-490a-b4d4-33ab324d8e01",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Debug-Session-Id": "de1763",
-          },
-          body: JSON.stringify({
-            sessionId: "de1763",
-            runId: "pre-fix",
-            hypothesisId: "B,E",
-            location: "imports.service.ts:createUpload",
-            message: "import preset detection",
-            data: {
-              fileName: file.originalname,
-              columnCount,
-              firstHeader: headers[0] ?? null,
-              mappingPreset,
-              floorsHeaderIdx: floorsIdx,
-              aadhaarHeaderIdx: aadhaarIdx,
-              mapFloorsRawIdx: map.floorsRaw,
-              mapTaxRateZoneIdx: map.taxRateZone,
-              headerAtMapFloors: headers[map.floorsRaw] ?? null,
-              headerAtMapZone: headers[map.taxRateZone] ?? null,
-              floorsMisaligned: floorsIdx >= 0 && floorsIdx !== map.floorsRaw,
-            },
-            timestamp: Date.now(),
-          }),
-        }
-      ).catch(() => {})
+    if (isShamliSurveyHeaderRow(headers)) {
+      return this.createShamliUpload(workbook, file, objectKey, user, duplicateStrategy)
     }
-    // #endregion
+    const mappingPreset = detectPresetFromHeaders(headers, columnCount)
 
     const job = await this.prisma.importJob.create({
       data: {
@@ -146,9 +131,147 @@ export class ImportsService {
     return job
   }
 
+  /**
+   * Shamli workbook upload: validate both sheets up front and store a dry-run
+   * report (create / update / unchanged / conflicts) so staff can review it
+   * before starting the import.
+   */
+  private async createShamliUpload(
+    workbook: ExcelJS.Workbook,
+    file: Express.Multer.File,
+    objectKey: string,
+    user: AuthUser,
+    duplicateStrategy: DuplicateStrategy
+  ) {
+    const { report, issues } = await this.shamli.preview(
+      workbook,
+      file.originalname,
+      duplicateStrategy
+    )
+    const structural = issues.some((i) => i.code === "HEADER_MISMATCH" || i.code === "SHEET_MISSING" || i.code === "UNEXPECTED_COLUMNS")
+    const job = await this.prisma.importJob.create({
+      data: {
+        fileName: file.originalname,
+        fileSize: file.size,
+        objectKey,
+        status: structural ? ImportJobStatus.FAILED : ImportJobStatus.READY,
+        mappingPreset: SHAMLI_PRESET,
+        duplicateStrategy,
+        createdById: user.id,
+        totalRows: report.surveys.total,
+        report: report as unknown as Prisma.InputJsonValue,
+      },
+    })
+    await this.saveIssues(job.id, issues)
+    return job
+  }
+
+  /** Re-validate a job's workbook against the current database (read-only). */
+  async preview(jobId: string) {
+    const job = await this.prisma.importJob.findUnique({ where: { id: jobId } })
+    if (!job) throw new NotFoundException("Import job not found")
+    if (!job.objectKey) throw new BadRequestException("Import file missing")
+    if (job.mappingPreset !== SHAMLI_PRESET) {
+      throw new BadRequestException({
+        code: "PREVIEW_UNSUPPORTED",
+        message: "Preview is available for Shamli survey workbooks",
+      })
+    }
+    const workbook = await this.loadWorkbook(job.objectKey)
+    const { report, issues } = await this.shamli.preview(
+      workbook,
+      job.fileName,
+      job.duplicateStrategy
+    )
+    const parse = this.shamli.parse(workbook)
+    const sample = parse.surveys.slice(0, 25).map((row) => ({
+      rowNumber: row.rowNumber,
+      propertyId: row.values["Property Id"],
+      status: row.values.Status,
+      ownerName: row.values["Owner Name"],
+      parcelNo: row.values["Parcel No"],
+      unitNo: row.values["Unit No"],
+      wardName: row.values["Ward Name"],
+      floors: row.floors.length,
+      errors: row.issues.filter((i) => i.severity === "error").length,
+      warnings: row.issues.filter((i) => i.severity === "warning").length,
+    }))
+    return { job, report, issues: issues.slice(0, 500), sample }
+  }
+
+  private async processShamliJob(
+    job: { id: string; fileName: string; duplicateStrategy: DuplicateStrategy; createdById: string | null },
+    workbook: ExcelJS.Workbook
+  ) {
+    await this.prisma.importError.deleteMany({ where: { importJobId: job.id } })
+    const { report, issues } = await this.shamli.run(workbook, job)
+    await this.saveIssues(job.id, issues)
+
+    const s = report.surveys
+    const succeeded = s.created + s.updated + s.unchanged + s.skipped + s.revived
+    const anyFailure = s.failed > 0 || report.images.failed > 0 || report.issues.byCode.HEADER_MISMATCH
+    const status = !anyFailure
+      ? ImportJobStatus.COMPLETED
+      : succeeded > 0
+        ? ImportJobStatus.PARTIAL
+        : ImportJobStatus.FAILED
+
+    return this.prisma.importJob.update({
+      where: { id: job.id },
+      data: {
+        status,
+        mappingPreset: SHAMLI_PRESET,
+        totalRows: s.total,
+        processedRows: s.total,
+        successRows: succeeded,
+        failedRows: s.failed,
+        skippedRows: s.skipped + s.unchanged,
+        insertedRows: s.created,
+        updatedRows: s.updated + s.revived,
+        warningRows: s.warningRows,
+        report: report as unknown as Prisma.InputJsonValue,
+        completedAt: new Date(),
+      },
+    })
+  }
+
+  private async saveIssues(importJobId: string, issues: WorkbookIssue[]) {
+    const rows = issues.map((issue) => ({
+      importJobId,
+      rowNumber: issue.rowNumber,
+      sheet: issue.sheet,
+      surveyId: issue.propertyId ?? null,
+      field: issue.field ?? null,
+      message: `[${issue.code}] ${issue.message}`,
+      severity: issue.severity,
+    }))
+    for (let i = 0; i < rows.length; i += 500) {
+      await this.prisma.importError.createMany({ data: rows.slice(i, i + 500) })
+    }
+  }
+
+  private async loadWorkbook(objectKey: string) {
+    const buffer = await this.storage.getObject(objectKey)
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(buffer as unknown as ExcelJS.Buffer)
+    return workbook
+  }
+
   async start(jobId: string) {
     const job = await this.prisma.importJob.findUnique({ where: { id: jobId } })
     if (!job) throw new NotFoundException("Import job not found")
+    if (job.status === ImportJobStatus.FAILED && job.mappingPreset === SHAMLI_PRESET && job.processedRows === 0) {
+      throw new BadRequestException({
+        code: "IMPORT_INVALID",
+        message: "This workbook failed validation; fix the listed sheet/column errors and upload again",
+      })
+    }
+    if (job.status === ImportJobStatus.PROCESSING) {
+      throw new BadRequestException({
+        code: "IMPORT_RUNNING",
+        message: "This import is already running",
+      })
+    }
 
     await this.prisma.importJob.update({
       where: { id: jobId },
@@ -168,7 +291,13 @@ export class ImportsService {
   async getJob(jobId: string) {
     const job = await this.prisma.importJob.findUnique({
       where: { id: jobId },
-      include: { errors: { take: 100, orderBy: { rowNumber: "asc" } } },
+      // Errors before warnings so warnings never hide real failures.
+      include: {
+        errors: {
+          take: 200,
+          orderBy: [{ severity: "asc" }, { sheet: "desc" }, { rowNumber: "asc" }],
+        },
+      },
     })
     if (!job) throw new NotFoundException("Import job not found")
     return job
@@ -260,6 +389,9 @@ export class ImportsService {
     for (let col = 1; col <= columnCount; col++) {
       headers[col - 1] = cell([headerRow.getCell(col).value], 0)
     }
+    if (job.mappingPreset === SHAMLI_PRESET || isShamliSurveyHeaderRow(headers)) {
+      return this.processShamliJob(job, workbook)
+    }
     // Always resolve from the file headers (do not trust a stale job preset —
     // v1-38 on aadhaar-shifted sheets mapped Floors → Road Type).
     const { preset, map } = resolveColumnMap(headers, columnCount)
@@ -305,38 +437,6 @@ export class ImportsService {
         const mobile = !mobileRaw || mobileRaw === "0" ? "" : mobileRaw
         const floorsRaw = cell(values, map.floorsRaw)
         const floors = parseFloorsRaw(floorsRaw)
-        // #region agent log
-        if (ward.number === 13 && processed <= 2) {
-          fetch(
-            "http://127.0.0.1:7787/ingest/931237b4-c66c-490a-b4d4-33ab324d8e01",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "X-Debug-Session-Id": "de1763",
-              },
-              body: JSON.stringify({
-                sessionId: "de1763",
-                runId: "post-fix",
-                hypothesisId: "B,E",
-                location: "imports.service.ts:processJob",
-                message: "ward13 row floor parse",
-                data: {
-                  preset,
-                  mapFloorsRawIdx: map.floorsRaw,
-                  floorsRawPreview: floorsRaw.slice(0, 80),
-                  parsedFloorCount: floors.length,
-                  parsedAreas: floors.map((f) => f.areaSqFt ?? null),
-                  taxRateZone: cell(values, map.taxRateZone).slice(0, 40),
-                  roadType: cell(values, map.roadType).slice(0, 40),
-                  plotAreaSqFt: parseNumber(cell(values, map.plotAreaSqFt)),
-                },
-                timestamp: Date.now(),
-              }),
-            }
-          ).catch(() => {})
-        }
-        // #endregion
         const plotAreaSqFt = parseNumber(cell(values, map.plotAreaSqFt))
         const plotAreaSqMeter = parseNumber(cell(values, map.plotAreaSqMeter))
         const plinthAreaSqFt = parseNumber(cell(values, map.plinthAreaSqFt))
@@ -711,12 +811,26 @@ export class ImportsService {
   }
 
   async exportSurveys(
-    filters: { wardId?: string; status?: string },
+    filters: { wardId?: string; status?: string; format?: string },
     user: AuthUser
   ) {
     const ward = filters.wardId
       ? await this.prisma.ward.findUnique({ where: { id: filters.wardId } })
       : null
+    if (filters.status && !Object.values(SurveyStatus).includes(filters.status as SurveyStatus)) {
+      throw new BadRequestException({ code: "INVALID_STATUS", message: "Invalid survey status" })
+    }
+
+    const useShamliLayout =
+      filters.format === "shamli" ||
+      (filters.format !== "chhata" && getUlbCode() === SHAMLI_ULB_CODE)
+    if (useShamliLayout) {
+      return this.exportShamliSurveys(
+        { wardId: filters.wardId, status: filters.status as SurveyStatus | undefined },
+        ward?.number,
+        user
+      )
+    }
 
     const surveys = await this.prisma.survey.findMany({
       where: {
@@ -762,6 +876,95 @@ export class ImportsService {
 
     const url = await this.storage.getSignedUrl(objectKey, 600)
     return { job, url }
+  }
+
+  /** Same column names, order and cell types as the Shamli source workbook. */
+  private async exportShamliSurveys(
+    filters: { wardId?: string; status?: SurveyStatus },
+    wardNumber: number | undefined,
+    user: AuthUser
+  ) {
+    const surveys = await this.prisma.survey.findMany({
+      where: {
+        deletedAt: null,
+        status: filters.status ?? { not: "DELETED" },
+        ...(filters.wardId ? { wardId: filters.wardId } : {}),
+      },
+      include: {
+        ward: { select: { number: true, name: true } },
+        attachments: {
+          select: {
+            imageType: true,
+            originalFileName: true,
+            sourceUrl: true,
+            sourceRowNumber: true,
+            mimeType: true,
+          },
+          orderBy: { createdAt: "asc" },
+        },
+      },
+      take: 50000,
+    })
+    const workbook = buildShamliExportWorkbook(surveys)
+    const fileName = buildShamliExportFilename(wardNumber)
+    const buffer = Buffer.from(await workbook.xlsx.writeBuffer())
+    const objectKey = `exports/${Date.now()}-${fileName}`
+    await this.storage.putObject(
+      objectKey,
+      buffer,
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    const job = await this.prisma.exportJob.create({
+      data: {
+        filters: { ...filters, format: "shamli" },
+        status: "COMPLETED",
+        fileKey: objectKey,
+        fileName,
+        rowCount: surveys.length,
+        createdById: user.id,
+        completedAt: new Date(),
+      },
+    })
+    const url = await this.storage.getSignedUrl(objectKey, 600)
+    return { job, url }
+  }
+}
+
+const XLSX_MIME = new Set([
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/octet-stream",
+  "application/zip",
+])
+
+/** Workbook uploads: required, .xlsx, ZIP container bytes, size limit. */
+export function assertExcelUpload(file: Express.Multer.File | undefined) {
+  if (!file?.buffer?.length) {
+    throw new BadRequestException({
+      code: "FILE_REQUIRED",
+      message: "An .xlsx workbook is required",
+    })
+  }
+  const maxMb = Number(process.env.IMPORT_MAX_FILE_SIZE_MB ?? 50)
+  if (file.size > maxMb * 1024 * 1024) {
+    throw new BadRequestException({
+      code: "FILE_TOO_LARGE",
+      message: `Workbook must be under ${maxMb}MB`,
+    })
+  }
+  const isZip =
+    file.buffer[0] === 0x50 &&
+    file.buffer[1] === 0x4b &&
+    file.buffer[2] === 0x03 &&
+    file.buffer[3] === 0x04
+  if (
+    !/\.xlsx$/i.test(file.originalname) ||
+    !isZip ||
+    (file.mimetype && !XLSX_MIME.has(file.mimetype))
+  ) {
+    throw new BadRequestException({
+      code: "INVALID_FILE_TYPE",
+      message: "Only .xlsx Excel workbooks can be imported",
+    })
   }
 }
 
