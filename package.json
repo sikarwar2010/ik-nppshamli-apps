@@ -1,5 +1,5 @@
 {
-  "name": "sdv-chhata-apps",
+  "name": "sdv-nppshamli-apps",
   "version": "0.0.1",
   "private": true,
   "scripts": {
@@ -23,15 +23,15 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "@typescript-eslint/eslint-plugin": "^8.69.0",
-    "@typescript-eslint/parser": "^8.69.0",
+    "@typescript-eslint/eslint-plugin": "^8.71.2",
+    "@typescript-eslint/parser": "^8.71.2",
     "@workspace/eslint-config": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
     "eslint": "catalog:",
     "eslint-plugin-react": "^7.37.5",
-    "prettier": "^3.9.6",
+    "prettier": "^3.9.10",
     "prettier-plugin-tailwindcss": "^0.8.1",
-    "turbo": "^2.10.12",
+    "turbo": "^2.11.9",
     "typescript": "catalog:"
   },
   "packageManager": "pnpm@11.25.0+sha512.5cde925b4f075f725eb71fbae18a42ffe784524789f19b61c731cb8721ec28aaee160e01a8d5af4fedb2a42cdbf300efe23db356b0d4a17b4d63e11f8ab7c956",
