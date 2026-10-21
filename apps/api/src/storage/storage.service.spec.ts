@@ -1,4 +1,23 @@
-import { StorageService } from "./storage.service"
+import { describeStorageError, StorageService } from "./storage.service"
+
+describe("describeStorageError", () => {
+  it("points AccessDenied at API user provisioning", () => {
+    const err = Object.assign(
+      new Error("Valid and authorized credentials required"),
+      { code: "AccessDenied" }
+    )
+    expect(describeStorageError(err)).toBe(
+      "Valid and authorized credentials required (AccessDenied: check that MINIO_ACCESS_KEY/MINIO_SECRET_KEY match a provisioned storage user with access to MINIO_BUCKET — see the minio-init service)"
+    )
+  })
+
+  it("passes other errors through unchanged", () => {
+    expect(describeStorageError(new Error("connect ECONNREFUSED"))).toBe(
+      "connect ECONNREFUSED"
+    )
+    expect(describeStorageError("boom")).toBe("boom")
+  })
+})
 
 describe("StorageService", () => {
   const previousDir = process.env.STORAGE_DIR

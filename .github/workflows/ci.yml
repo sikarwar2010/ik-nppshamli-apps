@@ -58,12 +58,13 @@ jobs:
       - uses: actions/checkout@v4
 
       # Service containers cannot pass a command, so MinIO is started here.
+      # Same image as docker-compose.prod.yml.
       - name: Start MinIO (storage integration tests)
         run: |
           docker run -d --name minio -p 9000:9000 \
             -e MINIO_ROOT_USER="$MINIO_TEST_ACCESS_KEY" \
             -e MINIO_ROOT_PASSWORD="$MINIO_TEST_SECRET_KEY" \
-            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+            docker.io/pgsty/silo:RELEASE.2026-10-18T00-00-00Z server /data
           for _ in $(seq 1 30); do
             curl -fsS http://localhost:9000/minio/health/ready && exit 0
             sleep 2

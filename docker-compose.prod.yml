@@ -6,7 +6,8 @@
 # attaches domains in the UI (Domains tab → service name + container port).
 #
 # API startup (same DATABASE_URL for all three steps):
-#   PostgreSQL healthy → prisma migrate deploy → Super Admin seed → Nest
+#   PostgreSQL + Redis + MinIO healthy, minio-init done →
+#   prisma migrate deploy → Super Admin seed → Nest
 #
 # Dokploy UI:
 #   Compose path: docker-compose.prod.yml
@@ -64,8 +65,10 @@ services:
   # host or Traefik: only the API talks to it (signed /api/v1/files links).
   # Do NOT attach a Dokploy domain to port 9000/9001. For console access use
   # an SSH tunnel (docs/storage/minio.md).
+  # pgsty/silo is the maintained MinIO fork (same S3 API, MINIO_* vars and
+  # on-disk format; bundles `mc`). Upstream quay.io/minio images now 401.
   minio:
-    image: ${MINIO_IMAGE}
+    image: ${MINIO_IMAGE:-docker.io/pgsty/silo:RELEASE.2026-10-18T00-00-00Z}
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -80,6 +83,43 @@ services:
       retries: 10
     expose:
       - "9000"
+
+  # One-shot, idempotent provisioning (runs on every deploy, then exits 0):
+  # bucket, least-privilege `shamli-api` policy, and the API user
+  # MINIO_ACCESS_KEY. Re-running with a new MINIO_SECRET_KEY rotates it.
+  # Never deletes objects. The API waits for this to complete successfully.
+  minio-init:
+    image: ${MINIO_IMAGE:-docker.io/pgsty/silo:RELEASE.2026-10-18T00-00-00Z}
+    restart: "no"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${MINIO_BUCKET:-shamli-survey-images}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        : "$${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}"
+        : "$${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}"
+        : "$${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY is required}"
+        : "$${MINIO_SECRET_KEY:?MINIO_SECRET_KEY is required}"
+        if [ "$$MINIO_ACCESS_KEY" = "$$MINIO_ROOT_USER" ]; then
+          echo "[minio-init] MINIO_ACCESS_KEY must differ from MINIO_ROOT_USER (the API uses a least-privilege user)" >&2
+          exit 1
+        fi
+        mc alias set shamli http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" >/dev/null
+        mc mb --ignore-existing "shamli/$$MINIO_BUCKET"
+        printf '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:GetBucketLocation","s3:ListBucket"],"Resource":["arn:aws:s3:::%s"]},{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject"],"Resource":["arn:aws:s3:::%s/*"]}]}' "$$MINIO_BUCKET" "$$MINIO_BUCKET" > /tmp/shamli-api-policy.json
+        mc admin policy create shamli shamli-api /tmp/shamli-api-policy.json >/dev/null
+        mc admin user add shamli "$$MINIO_ACCESS_KEY" "$$MINIO_SECRET_KEY" >/dev/null
+        mc admin policy attach shamli shamli-api --user "$$MINIO_ACCESS_KEY" >/dev/null
+        echo "[minio-init] bucket, policy shamli-api and API user ready"
+    depends_on:
+      minio:
+        condition: service_healthy
 
   api:
     build:
@@ -130,6 +170,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     healthcheck:
       test: [ "CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/v1/health/ready').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" ]
       interval: 15s

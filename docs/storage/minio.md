@@ -38,7 +38,26 @@ dev-only credentials from `docker-compose.yml`). Set the `MINIO_*` values from
 port, no Traefik domain). Set in the Dokploy Environment tab: `MINIO_ROOT_USER`,
 `MINIO_ROOT_PASSWORD`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET`.
 
-Create a least-privilege API user once (root credentials stay with administrators):
+The image defaults to `docker.io/pgsty/silo:RELEASE.2026-10-18T00-00-00Z`, the maintained MinIO
+fork (same S3 API, `MINIO_*` variables and on-disk format, bundles `mc`); upstream
+`quay.io/minio/minio` pulls now fail with HTTP 401. Override with `MINIO_IMAGE` only with a tag you
+have verified.
+
+The one-shot `minio-init` service runs on every deploy after `minio` is healthy and before the
+API starts. It is idempotent and never deletes objects: it creates `MINIO_BUCKET` if missing,
+(re)writes the `shamli-api` policy (bucket-only list/get/put/delete), creates or updates the user
+`MINIO_ACCESS_KEY` with `MINIO_SECRET_KEY`, and attaches the policy. `MINIO_ACCESS_KEY` must differ
+from `MINIO_ROOT_USER`. If it fails the API does not start; check `docker compose logs minio-init`.
+
+If the API logs `Storage not ready: Valid and authorized credentials required`, the storage server
+answered 403: the API key is not provisioned, its secret differs, or it lacks the bucket policy.
+
+**Rotating the API secret:** change `MINIO_SECRET_KEY` in Dokploy and redeploy — `minio-init`
+updates the user before the new API container starts. **Rotating root:** silo reads
+`MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD` from the environment on start, so change both in Dokploy and
+redeploy; stored objects and IAM users are kept on the volume.
+
+The equivalent manual commands (for reference / non-Compose installs):
 
 ```bash
 docker compose exec minio sh -c '

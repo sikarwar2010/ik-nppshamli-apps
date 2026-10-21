@@ -43,6 +43,46 @@ describe("assertRequiredEnv", () => {
     ).toThrow(/PAYMENT_PROVIDER/)
   })
 
+  it("rejects placeholder session and signing secrets in production", () => {
+    expect(() =>
+      assertRequiredEnv({
+        env: {
+          ...baseProdEnv,
+          SESSION_SECRET: "CHANGE_ME_at_least_32_random_chars",
+        },
+      })
+    ).toThrow(/SESSION_SECRET uses a placeholder/)
+    expect(() =>
+      assertRequiredEnv({
+        env: {
+          ...baseProdEnv,
+          SESSION_SECRET: "change-me-to-a-long-random-secret-at-least-32-chars",
+        },
+      })
+    ).toThrow(/SESSION_SECRET uses a placeholder/)
+    expect(() =>
+      assertRequiredEnv({
+        env: {
+          ...baseProdEnv,
+          STORAGE_SIGNING_SECRET: "CHANGE_ME_at_least_32_random_chars",
+        },
+      })
+    ).toThrow(/STORAGE_SIGNING_SECRET uses a placeholder/)
+  })
+
+  it("requires a strong STORAGE_SIGNING_SECRET in production when set", () => {
+    expect(() =>
+      assertRequiredEnv({
+        env: { ...baseProdEnv, STORAGE_SIGNING_SECRET: "short" },
+      })
+    ).toThrow(/STORAGE_SIGNING_SECRET must be at least 32 characters/)
+    expect(() =>
+      assertRequiredEnv({
+        env: { ...baseProdEnv, STORAGE_SIGNING_SECRET: "s".repeat(32) },
+      })
+    ).not.toThrow()
+  })
+
   it("requires DATABASE_URL in all environments", () => {
     expect(() =>
       assertRequiredEnv({

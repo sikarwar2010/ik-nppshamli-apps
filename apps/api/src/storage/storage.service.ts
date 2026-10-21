@@ -57,7 +57,7 @@ export class StorageService implements OnModuleInit {
     } catch (err) {
       // Keep the API up; /api/v1/health/ready reports storage=false and the
       // next upload retries bucket initialization.
-      this.logger.error(`Storage not ready: ${describeError(err)}`)
+      this.logger.error(`Storage not ready: ${describeStorageError(err)}`)
     }
   }
 
@@ -248,7 +248,13 @@ export class StorageService implements OnModuleInit {
   }
 }
 
-function describeError(err: unknown): string {
-  if (err instanceof Error) return err.message
-  return String(err)
+/** Log-safe error text; never includes credentials. */
+export function describeStorageError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err)
+  // minio-js reports any 403 on bucket HEAD this way: the key is unknown to
+  // the server, the secret is wrong, or the user lacks a bucket policy.
+  if ((err as { code?: string }).code === "AccessDenied") {
+    return `${err.message} (AccessDenied: check that MINIO_ACCESS_KEY/MINIO_SECRET_KEY match a provisioned storage user with access to MINIO_BUCKET — see the minio-init service)`
+  }
+  return err.message
 }

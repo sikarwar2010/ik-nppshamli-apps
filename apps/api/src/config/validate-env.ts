@@ -11,6 +11,9 @@ function isProduction(env: NodeJS.ProcessEnv): boolean {
   return env.NODE_ENV === "production"
 }
 
+/** Matches the CHANGE_ME… / change-me-… values shipped in the .env examples. */
+const PLACEHOLDER_SECRET = /^change[-_]?me/i
+
 function collectProductionErrors(env: NodeJS.ProcessEnv): string[] {
   const errors: string[] = []
 
@@ -19,6 +22,24 @@ function collectProductionErrors(env: NodeJS.ProcessEnv): string[] {
     errors.push(
       "SESSION_SECRET must be set (≥32 random chars). Generate with: openssl rand -base64 48"
     )
+  } else if (PLACEHOLDER_SECRET.test(sessionSecret)) {
+    errors.push(
+      "SESSION_SECRET uses a placeholder; generate one with: openssl rand -base64 48"
+    )
+  }
+
+  // HMAC key for /api/v1/files links; falls back to SESSION_SECRET when unset.
+  const signingSecret = env.STORAGE_SIGNING_SECRET?.trim()
+  if (signingSecret) {
+    if (signingSecret.length < 32) {
+      errors.push(
+        "STORAGE_SIGNING_SECRET must be at least 32 characters (or unset it to reuse SESSION_SECRET)"
+      )
+    } else if (PLACEHOLDER_SECRET.test(signingSecret)) {
+      errors.push(
+        "STORAGE_SIGNING_SECRET uses a placeholder; generate one with: openssl rand -base64 48"
+      )
+    }
   }
 
   if (!env.PUBLIC_APP_URL?.trim()) {
