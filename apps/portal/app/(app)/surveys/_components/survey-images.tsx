@@ -7,6 +7,7 @@ import {
   ImageOff,
   ImagePlus,
   Loader2,
+  RefreshCw,
   Trash2,
 } from "lucide-react"
 import * as React from "react"
@@ -24,13 +25,19 @@ import {
 } from "@workspace/ui/components/dialog"
 
 import { api } from "@/lib/api"
+import {
+  imageTileState,
+  summarizeSurveyImages,
+  type ImageLoadState,
+  type SurveyImageStorageStatus,
+} from "@/lib/survey-image-state"
 
 export type SurveyImage = {
   id: string
   originalFileName: string
   mimeType: string
   imageType: string | null
-  storageStatus?: "AVAILABLE" | "PENDING_MIGRATION" | "FAILED"
+  storageStatus?: SurveyImageStorageStatus
   migrationError?: string | null
   createdAt: string
   url: string | null
@@ -52,8 +59,29 @@ export function SurveyImages({
   const inputRef = React.useRef<HTMLInputElement>(null)
   const [pendingDelete, setPendingDelete] = React.useState<SurveyImage | null>(null)
 
-  const refresh = () =>
-    queryClient.invalidateQueries({ queryKey: ["survey", surveyId] })
+  // The detail page keys its query by the route param (db id or property
+  // id), so refresh every cached survey detail rather than guessing the key.
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ["survey"] })
+
+  const migrate = useMutation({
+    mutationFn: async () =>
+      (
+        await api.post<{ attempted: number; available: number; failed: number }>(
+          `/api/v1/surveys/${surveyId}/attachments/migrate`
+        )
+      ).data,
+    onSuccess: async (result) => {
+      if (result.failed) {
+        toast.error(`${result.failed} image${result.failed === 1 ? "" : "s"} could not be migrated`)
+      } else if (result.available) {
+        toast.success(`${result.available} image${result.available === 1 ? "" : "s"} migrated`)
+      } else {
+        toast.info("No images are waiting for migration")
+      }
+      await refresh()
+    },
+    onError: (err: Error) => toast.error(err.message || "Migration failed"),
+  })
 
   const upload = useMutation({
     mutationFn: async (file: File) => {
@@ -79,17 +107,10 @@ export function SurveyImages({
     onError: (err: Error) => toast.error(err.message || "Delete failed"),
   })
 
-  const pending = images.filter((i) => i.storageStatus && i.storageStatus !== "AVAILABLE")
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">
-          {images.length
-            ? `${images.length} image${images.length === 1 ? "" : "s"}`
-            : "No images for this property yet."}
-          {pending.length ? ` · ${pending.length} awaiting storage migration` : ""}
-        </p>
+        <p className="text-sm text-muted-foreground">{summarizeSurveyImages(images)}</p>
         {canEdit ? (
           <>
             <input
@@ -122,7 +143,13 @@ export function SurveyImages({
         <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {images.map((image) => (
             <li key={image.id} className="overflow-hidden rounded-xl border bg-muted/20">
-              <ImageTile image={image} />
+              <ImageTile
+                image={image}
+                canMigrate={canEdit}
+                migrating={migrate.isPending}
+                onMigrate={() => migrate.mutate()}
+                onLinkExpired={refresh}
+              />
               <div className="flex items-start justify-between gap-2 p-3">
                 <div className="min-w-0">
                   <p className="text-sm font-semibold">{image.imageType || "Image"}</p>
@@ -188,35 +215,71 @@ export function SurveyImages({
   )
 }
 
-function ImageTile({ image }: { image: SurveyImage }) {
-  const [broken, setBroken] = React.useState(false)
+function ImageTile({
+  image,
+  canMigrate,
+  migrating,
+  onMigrate,
+  onLinkExpired,
+}: {
+  image: SurveyImage
+  canMigrate: boolean
+  migrating: boolean
+  onMigrate: () => void
+  onLinkExpired: () => void
+}) {
+  const [load, setLoad] = React.useState<ImageLoadState>({ failedUrl: null, retried: false })
+  const state = imageTileState(image, load)
   const frame = "flex aspect-[4/3] w-full items-center justify-center bg-muted text-muted-foreground"
 
-  if (image.storageStatus === "PENDING_MIGRATION" || image.storageStatus === "FAILED") {
-    const failed = image.storageStatus === "FAILED"
+  if (state === "pending" || state === "failed") {
+    const failed = state === "failed"
     return (
       <div className={`${frame} flex-col gap-2 p-4 text-center`}>
-        <CloudOff className="size-8" aria-hidden />
-        <Badge variant={failed ? "destructive" : "secondary"}>
-          {failed ? "Migration failed" : "Awaiting migration"}
+        {migrating ? (
+          <Loader2 className="size-8 animate-spin" aria-hidden />
+        ) : (
+          <CloudOff className="size-8" aria-hidden />
+        )}
+        <Badge variant={failed && !migrating ? "destructive" : "secondary"}>
+          {migrating ? "Migrating…" : failed ? "Migration failed" : "Awaiting migration"}
         </Badge>
-        {failed && image.migrationError ? (
+        {failed && image.migrationError && !migrating ? (
           <p className="line-clamp-2 text-xs">{image.migrationError}</p>
+        ) : null}
+        {canMigrate ? (
+          <Button
+            size="sm"
+            variant="outline"
+            className="min-h-10 cursor-pointer"
+            disabled={migrating}
+            onClick={onMigrate}
+          >
+            <RefreshCw />
+            {failed ? "Retry migration" : "Migrate now"}
+          </Button>
         ) : null}
       </div>
     )
   }
-  if (!image.url || broken) {
+  if (state === "refreshing") {
     return (
-      <div className={`${frame} flex-col gap-2`}>
-        <ImageOff className="size-8" aria-hidden />
-        <span className="text-xs">{broken ? "Link expired — reload the page" : "Not available"}</span>
+      <div className={frame} aria-busy>
+        <Loader2 className="size-8 animate-spin" aria-label="Refreshing image link" />
       </div>
     )
   }
-  if (!image.mimeType.startsWith("image/")) {
+  if (state === "unavailable") {
     return (
-      <a href={image.url} target="_blank" rel="noreferrer" className={`${frame} text-sm underline`}>
+      <div className={`${frame} flex-col gap-2`}>
+        <ImageOff className="size-8" aria-hidden />
+        <span className="text-xs">{load.failedUrl ? "Image could not be loaded" : "Not available"}</span>
+      </div>
+    )
+  }
+  if (state === "document") {
+    return (
+      <a href={image.url!} target="_blank" rel="noreferrer" className={`${frame} text-sm underline`}>
         Open document
       </a>
     )
@@ -225,12 +288,17 @@ function ImageTile({ image }: { image: SurveyImage }) {
     // Signed, expiring API URLs — next/image optimization would cache them.
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={image.url}
+      src={image.url!}
       alt={`${image.imageType ?? "Property image"} — ${image.originalFileName}`}
       loading="lazy"
       decoding="async"
       className="aspect-[4/3] w-full bg-muted object-cover"
-      onError={() => setBroken(true)}
+      onError={() => {
+        // Lazy images can load after the 5-minute link expired: re-sign once.
+        const retry = !load.retried
+        setLoad({ failedUrl: image.url, retried: true })
+        if (retry) onLinkExpired()
+      }}
     />
   )
 }

@@ -6,6 +6,7 @@ import { Test, TestingModule } from "@nestjs/testing"
 
 import { AuditService } from "../audit/audit.service"
 import { PrismaService } from "../prisma/prisma.service"
+import { ImageMigrationService } from "../storage/image-migration.service"
 import { StorageService } from "../storage/storage.service"
 import { SurveysService } from "./surveys.service"
 
@@ -47,6 +48,8 @@ describe("SurveysService", () => {
     $transaction: jest.Mock
   }
   let audit: { log: jest.Mock }
+  let storage: { getSignedUrlForUser: jest.Mock }
+  let imageMigration: { migrateSurveyImages: jest.Mock }
 
   const afterEachRestore: Array<() => void> = []
   afterEach(() => {
@@ -66,13 +69,20 @@ describe("SurveysService", () => {
       $transaction: jest.fn(),
     }
     audit = { log: jest.fn() }
+    storage = {
+      getSignedUrlForUser: jest.fn(
+        async (_user: unknown, key: string) => `/api/v1/files?key=${encodeURIComponent(key)}&exp=1&sig=s`
+      ),
+    }
+    imageMigration = { migrateSurveyImages: jest.fn() }
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SurveysService,
         { provide: PrismaService, useValue: prisma },
         { provide: AuditService, useValue: audit },
-        { provide: StorageService, useValue: {} },
+        { provide: StorageService, useValue: storage },
+        { provide: ImageMigrationService, useValue: imageMigration },
       ],
     }).compile()
 
@@ -273,5 +283,67 @@ describe("SurveysService", () => {
         }),
       })
     )
+  })
+
+  describe("property images", () => {
+    const frontKey =
+      "property-images/800645/ward-003/800645-003-00031-006-R/front-view--b83c3c6a-5832-4f72-a9a3-c2d106103894.jpg"
+
+    it("returns signed file URLs only for AVAILABLE images", async () => {
+      const survey = {
+        ...baseSurvey,
+        attachments: [
+          { id: "a1", objectKey: frontKey, mimeType: "image/jpeg", storageStatus: "AVAILABLE" },
+          { id: "a2", objectKey: `${frontKey}-side`, mimeType: "image/jpeg", storageStatus: "PENDING_MIGRATION" },
+          { id: "a3", objectKey: `${frontKey}-x`, mimeType: "image/jpeg", storageStatus: "FAILED" },
+        ],
+      }
+      const result = await service.withAttachmentUrls(survey, user)
+
+      expect(result.attachments?.map((a) => [a.id, a.url])).toEqual([
+        ["a1", `/api/v1/files?key=${encodeURIComponent(frontKey)}&exp=1&sig=s`],
+        ["a2", null],
+        ["a3", null],
+      ])
+      for (const a of result.attachments ?? []) {
+        expect(a.url ?? "").not.toMatch(/minio|:9000|MINIO_/i)
+      }
+    })
+
+    it("migrates this survey's pending images and audits the run", async () => {
+      mockFindOne()
+      imageMigration.migrateSurveyImages.mockResolvedValue([
+        { attachmentId: "a1", imageType: "Front View", outcome: "migrated" },
+        { attachmentId: "a2", imageType: "Side View", outcome: "failed", error: "HTTP 404 from source" },
+      ])
+
+      const result = await service.migrateAttachments(baseSurvey.id, user)
+
+      expect(imageMigration.migrateSurveyImages).toHaveBeenCalledWith(baseSurvey.id)
+      expect(result).toEqual({
+        attempted: 2,
+        available: 1,
+        failed: 1,
+        results: [
+          { attachmentId: "a1", imageType: "Front View", outcome: "migrated", error: null },
+          { attachmentId: "a2", imageType: "Side View", outcome: "failed", error: "HTTP 404 from source" },
+        ],
+      })
+      expect(audit.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "SURVEY_ATTACHMENTS_MIGRATED",
+          entityId: baseSurvey.id,
+          newValue: { attempted: 2, available: 1, failed: 1 },
+        })
+      )
+    })
+
+    it("does not let read-only users trigger a migration", async () => {
+      mockFindOne()
+      await expect(
+        service.migrateAttachments(baseSurvey.id, { ...user, roles: ["VIEWER"], permissions: ["survey:read"] })
+      ).rejects.toThrow()
+      expect(imageMigration.migrateSurveyImages).not.toHaveBeenCalled()
+    })
   })
 })

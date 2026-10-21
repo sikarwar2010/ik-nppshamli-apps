@@ -89,7 +89,8 @@ Sq-metre area columns are not in this workbook and are left NULL (not computed).
 
 **Parcel Images**: Property ID → survey; Ward Number must equal the survey ward; Parcel/Unit
 cross-checked (blank ≡ `N/A`); Image Type → `imageType`; Image Name → `originalFileName`;
-Image URL → `sourceUrl`. Rows start as `PENDING_MIGRATION` with a planned MinIO key.
+Image URL → `sourceUrl`. Rows start as `PENDING_MIGRATION` with a planned MinIO key; the API's
+background sweep copies them into storage and marks them `AVAILABLE` (docs/storage/minio.md).
 
 ## Rollback
 

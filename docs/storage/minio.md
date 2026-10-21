@@ -97,6 +97,19 @@ row references it.
 
 ## Migrating legacy images
 
+Imported images start as `PENDING_MIGRATION` (shown as "Awaiting migration" in the portal) and
+have no stored object until they are migrated. The API migrates them automatically: a background
+sweep starts 15 s after boot and repeats every `IMAGE_MIGRATION_INTERVAL_SECONDS` (default 300,
+`0` disables), in batches of `IMAGE_MIGRATION_BATCH_SIZE` (25) with `IMAGE_MIGRATION_CONCURRENCY`
+(4) downloads. A Redis lock keeps one sweep running across API containers. The sweep only picks up
+`PENDING_MIGRATION` rows; `FAILED` rows wait for a retry. API logs:
+`Image migration sweep: N image(s) {"migrated":…,"failed":…}`.
+
+Staff with `survey:update` can migrate or retry one property's images from its Property Images
+section ("Migrate now" / "Retry migration" → `POST /api/v1/surveys/:id/attachments/migrate`,
+audited as `SURVEY_ATTACHMENTS_MIGRATED`). For bulk work and reports use the CLI in the API
+container:
+
 ```bash
 node dist/cli/migrate-images-to-minio.js --ward 3 --dry-run
 node dist/cli/migrate-images-to-minio.js --ward 3 [--limit 20] [--concurrency 4]

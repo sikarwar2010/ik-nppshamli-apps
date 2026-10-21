@@ -23,6 +23,7 @@ import {
 import { markRoutesVerified } from "./health/route-verification-state"
 import { verifyCriticalRoutes } from "./health/verify-critical-routes"
 import { pingRedis } from "./common/redis.client"
+import { ImageMigrationWorker } from "./storage/image-migration.worker"
 
 async function bootstrap() {
   assertRequiredEnv()
@@ -128,6 +129,8 @@ async function bootstrap() {
   bootstrapLogger.log(
     `API listening on http://0.0.0.0:${port} buildId=${runtime.buildId} pid=${runtime.pid}`
   )
+
+  app.get(ImageMigrationWorker).start()
 }
 
 bootstrap().catch((error: unknown) => {

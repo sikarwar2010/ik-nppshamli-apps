@@ -10,7 +10,7 @@
     "lint": "eslint",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
-    "test": "node --test lib/health-route.test.mjs lib/auth-me-route.test.mjs lib/proxy-to-api.test.mjs lib/portal-api-fetch.test.mjs lib/route-access-gate.test.mjs lib/route-permissions.test.mjs && pnpm --filter api exec tsx --test ../portal/lib/floors.test.ts ../portal/lib/catalog-labels.test.ts",
+    "test": "node --test lib/health-route.test.mjs lib/auth-me-route.test.mjs lib/proxy-to-api.test.mjs lib/portal-api-fetch.test.mjs lib/route-access-gate.test.mjs lib/route-permissions.test.mjs && pnpm --filter api exec tsx --test ../portal/lib/floors.test.ts ../portal/lib/catalog-labels.test.ts ../portal/lib/survey-image-state.test.ts",
     "test:e2e": "playwright test",
     "e2e": "playwright test"
   },

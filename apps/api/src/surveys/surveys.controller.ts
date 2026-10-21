@@ -109,6 +109,16 @@ export class SurveysController {
     return { success: true, data }
   }
 
+  @Post(":id/attachments/migrate")
+  @RequirePermission("survey:update")
+  async migrateAttachments(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthUser
+  ) {
+    const data = await this.surveysService.migrateAttachments(id, user)
+    return { success: true, data }
+  }
+
   @Delete(":id/attachments/:attachmentId")
   @RequirePermission("survey:update")
   async removeAttachment(

@@ -13,6 +13,7 @@ import { AuditService } from "../audit/audit.service"
 import type { AuthUser } from "../auth/auth.decorators"
 import { assertSurveyAccess } from "../auth/resource-access"
 import { PrismaService } from "../prisma/prisma.service"
+import { ImageMigrationService } from "../storage/image-migration.service"
 import { StorageService } from "../storage/storage.service"
 import {
   CreateSurveyDto,
@@ -44,7 +45,8 @@ export class SurveysService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
-    private readonly storage: StorageService
+    private readonly storage: StorageService,
+    private readonly imageMigration: ImageMigrationService
   ) {}
 
   async create(dto: CreateSurveyDto, user: AuthUser) {
@@ -700,6 +702,42 @@ export class SurveysService {
       })
       .catch(() => null)
     return { ...attachment, url }
+  }
+
+  /**
+   * Copy this survey's imported images that are still PENDING_MIGRATION or
+   * FAILED into object storage now (the background sweep does the same for
+   * PENDING rows; this is the manual retry). Rows only become AVAILABLE after
+   * the stored object is verified.
+   */
+  async migrateAttachments(surveyId: string, user: AuthUser) {
+    const current = await this.findOne(surveyId, user)
+    assertSurveyAccess(user, current, "update")
+    const results = await this.imageMigration.migrateSurveyImages(current.id)
+    const failed = results.filter((r) => r.outcome === "failed").length
+    const summary = {
+      attempted: results.length,
+      available: results.length - failed,
+      failed,
+    }
+    if (results.length > 0) {
+      await this.audit.log({
+        action: "SURVEY_ATTACHMENTS_MIGRATED",
+        entity: "Survey",
+        entityId: current.id,
+        actorId: user.id,
+        newValue: summary,
+      })
+    }
+    return {
+      ...summary,
+      results: results.map((r) => ({
+        attachmentId: r.attachmentId,
+        imageType: r.imageType,
+        outcome: r.outcome,
+        error: r.error ?? null,
+      })),
+    }
   }
 
   async removeAttachment(

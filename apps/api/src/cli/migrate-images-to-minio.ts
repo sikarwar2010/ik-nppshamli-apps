@@ -15,10 +15,11 @@ import path from "node:path"
 
 import { PrismaService } from "../prisma/prisma.service"
 import {
-  ImageFetchError,
-  fetchSourceImage,
-  withRetries,
-} from "../storage/image-migration"
+  ImageMigrationService,
+  MIGRATABLE_ATTACHMENT_SELECT,
+  countOutcomes,
+  type MigrationResult,
+} from "../storage/image-migration.service"
 import { StorageService } from "../storage/storage.service"
 import {
   cliArgs,
@@ -32,33 +33,8 @@ import {
 const USAGE = `Usage: node dist/cli/migrate-images-to-minio.js [--ward <n>] [--retry-failed]
        [--verify-available] [--limit <n>] [--concurrency <n>] [--dry-run] [--out <dir>]`
 
-type Outcome = "migrated" | "already-present" | "verified" | "failed" | "would-migrate"
-
-type ItemResult = {
-  attachmentId: string
-  propertyId: string
-  imageType: string | null
-  imageName: string
-  objectKey: string
-  outcome: Outcome
-  bytes?: number
-  sha256?: string
-  tries?: number
-  error?: string
-}
-
-async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length)
-  let next = 0
-  await Promise.all(
-    Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
-      while (next < items.length) {
-        const i = next++
-        results[i] = await fn(items[i]!)
-      }
-    })
-  )
-  return results
+type ItemResult = Omit<MigrationResult, "outcome"> & {
+  outcome: MigrationResult["outcome"] | "would-migrate"
 }
 
 runCli("migrate-images-to-minio", async () => {
@@ -79,6 +55,7 @@ runCli("migrate-images-to-minio", async () => {
   return withAppContext(async (app) => {
     const prisma = app.get(PrismaService)
     const storage = app.get(StorageService)
+    const migration = app.get(ImageMigrationService)
     if (storage.driverName !== "minio" && !args["dry-run"]) {
       console.error("STORAGE_DRIVER is not minio; refusing to migrate into local disk storage.")
       return 2
@@ -95,76 +72,26 @@ runCli("migrate-images-to-minio", async () => {
     }
     const items = await prisma.surveyAttachment.findMany({
       where,
-      include: { survey: { select: { surveyId: true } } },
+      select: MIGRATABLE_ATTACHMENT_SELECT,
       orderBy: [{ sourceRowNumber: "asc" }, { createdAt: "asc" }],
       ...(args.limit ? { take: Number(args.limit) } : {}),
     })
     console.log(`Selected ${items.length} image(s) [${statuses.join(", ")}] → bucket "${storage.bucketName}"`)
 
-    const results = await mapLimit(items, Number(args.concurrency) || 4, async (a): Promise<ItemResult> => {
-      const base = {
-        attachmentId: a.id,
-        propertyId: a.survey.surveyId,
-        imageType: a.imageType,
-        imageName: a.originalFileName,
-        objectKey: a.objectKey,
-      }
-      if (args["dry-run"]) return { ...base, outcome: "would-migrate" }
-      try {
-        const existing = await storage.statObject(a.objectKey)
-        if (a.storageStatus === "AVAILABLE" && existing && existing.metadata.sha256 === a.checksumSha256 && existing.size === a.size) {
-          return { ...base, outcome: "verified", bytes: existing.size, sha256: a.checksumSha256 ?? undefined }
-        }
+    const results: ItemResult[] = args["dry-run"]
+      ? items.map((a) => ({
+          attachmentId: a.id,
+          propertyId: a.survey.surveyId,
+          imageType: a.imageType,
+          imageName: a.originalFileName,
+          objectKey: a.objectKey,
+          outcome: "would-migrate",
+        }))
+      : await migration.migrateMany(items, Number(args.concurrency) || 4)
 
-        const { value: image, tries } = await withRetries(() => fetchSourceImage(a.sourceUrl!))
-        let outcome: Outcome = "migrated"
-        if (existing && existing.metadata.sha256 === image.sha256 && existing.size === image.body.length) {
-          outcome = "already-present"
-        } else {
-          await storage.putObject(a.objectKey, image.body, image.contentType, {
-            sha256: image.sha256,
-            "property-id": a.survey.surveyId,
-            "image-type": a.imageType ?? "",
-            "source-name": a.originalFileName,
-          })
-        }
-        // Read back before switching the row to AVAILABLE.
-        const stored = await storage.statObject(a.objectKey)
-        if (!stored || stored.size !== image.body.length || stored.metadata.sha256 !== image.sha256) {
-          throw new ImageFetchError("Stored object failed verification after upload", true)
-        }
-        await prisma.surveyAttachment.update({
-          where: { id: a.id },
-          data: {
-            storageStatus: "AVAILABLE",
-            bucket: storage.bucketName,
-            size: image.body.length,
-            mimeType: image.contentType,
-            checksumSha256: image.sha256,
-            migratedAt: new Date(),
-            migrationError: null,
-            migrationAttempts: { increment: 1 },
-          },
-        })
-        return { ...base, outcome, bytes: image.body.length, sha256: image.sha256, tries }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        // Never downgrade a verified object because a re-check could not reach the source.
-        if (a.storageStatus !== "AVAILABLE") {
-          await prisma.surveyAttachment.update({
-            where: { id: a.id },
-            data: {
-              storageStatus: "FAILED",
-              migrationError: message.slice(0, 500),
-              migrationAttempts: { increment: 1 },
-            },
-          })
-        }
-        return { ...base, outcome: "failed", error: message }
-      }
-    })
-
-    const counts = results.reduce<Record<string, number>>((m, r) => ((m[r.outcome] = (m[r.outcome] ?? 0) + 1), m), {})
+    const counts: Record<string, number> = args["dry-run"]
+      ? { "would-migrate": results.length }
+      : countOutcomes(results as MigrationResult[])
     const remaining = await prisma.surveyAttachment.groupBy({
       by: ["storageStatus"],
       where: { sourceUrl: { not: null }, ...(args.ward ? { survey: { ward: { number: Number(args.ward) } } } : {}) },
