@@ -65,7 +65,7 @@ services:
   # Do NOT attach a Dokploy domain to port 9000/9001. For console access use
   # an SSH tunnel (docs/storage/minio.md).
   minio:
-    image: ${MINIO_IMAGE:-quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z}
+    image: ${MINIO_IMAGE}
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
