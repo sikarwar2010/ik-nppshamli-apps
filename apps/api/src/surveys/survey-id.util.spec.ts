@@ -54,6 +54,8 @@ describe("survey-id", () => {
         parcelNo: "000131",
         propertyNo: "001",
         gisUseCode: "R",
+        // Default ULB is Shamli (800645); Chhata ids pass their ULB explicitly.
+        ulbCode: "249044",
       })
     ).toBe(id)
   })

@@ -28,6 +28,7 @@ import {
   fetchPublicPropertyDues,
 } from "@/lib/property-tax-api"
 import { PublicApiError } from "@/lib/public-api"
+import { site } from "@/lib/site"
 
 export default function PropertyTaxPayPage() {
   const params = useParams<{ id: string }>()
@@ -204,7 +205,7 @@ export default function PropertyTaxPayPage() {
                     </p>
                     <p className="mt-1 text-amber-900/80">
                       Published tax rates may be missing or set to zero. Please
-                      contact Nagar Panchayat Chhata or try again after rates are
+                      contact {site.identity.nameEn} or try again after rates are
                       updated.
                     </p>
                   </>
@@ -226,7 +227,7 @@ export default function PropertyTaxPayPage() {
                 <div className="border-gov-saffron/20 bg-gov-orange-light mt-5 flex items-start gap-3 rounded-xl border px-4 py-3 text-sm text-slate-800">
                   <ShieldCheck className="text-gov-saffron-dark mt-0.5 h-5 w-5 shrink-0" />
                   <p>
-                    This is an official Nagar Panchayat Chhata house tax
+                    This is an official {site.identity.nameEn} house tax
                     payment. The amount is fixed by published rates and cannot
                     be changed.
                   </p>

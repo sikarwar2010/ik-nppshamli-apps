@@ -23,7 +23,11 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "tsx prisma/seed.ts",
     "prisma:studio": "prisma studio",
-    "repair:survey-ids": "tsx scripts/repair-survey-id-consistency.ts"
+    "repair:survey-ids": "tsx scripts/repair-survey-id-consistency.ts",
+    "shamli:import": "node dist/cli/import-shamli-workbook.js",
+    "shamli:reconcile": "node dist/cli/reconcile-shamli-workbook.js",
+    "shamli:rollback": "node dist/cli/rollback-shamli-import.js",
+    "images:migrate": "node dist/cli/migrate-images-to-minio.js"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",

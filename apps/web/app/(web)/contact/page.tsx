@@ -1,15 +1,14 @@
-import ContactUs from "@/components/contact/page"
+import variant from "@site/variant"
 import type { Metadata } from "next"
 
+import { site } from "@/lib/site"
+
 export const metadata: Metadata = {
-  title: "Contact Us",
-  description:
-    "Contact Nagar Panchayat Chhata, Mathura, Uttar Pradesh, India. Get in touch with us for inquiries, feedback, or assistance regarding our services and community initiatives.",
+  title: "Contact us",
+  description: `Office contact details of ${site.identity.nameEn}.`,
+  alternates: { canonical: "/contact" },
 }
-export default function Contact() {
-  return (
-    <div>
-      <ContactUs />
-    </div>
-  )
+
+export default function Page() {
+  return <variant.Contact />
 }

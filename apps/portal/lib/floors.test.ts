@@ -48,6 +48,15 @@ test("pickBestSurveySearchMatch prefers exact padded parcel over first hit", () 
   ]
   const match = pickBestSurveySearchMatch(rows, "131")
   assert.equal(match?.id, "b")
+
+  // Shamli 5-digit parcels.
+  const shamli = [
+    { id: "x", surveyId: "800645-003-00001-001-H", parcelNo: "00001" },
+    { id: "y", surveyId: "800645-003-00116-001-R", parcelNo: "00116" },
+  ]
+  assert.equal(pickBestSurveySearchMatch(shamli, "116")?.id, "y")
+  assert.equal(pickBestSurveySearchMatch(shamli, "00116")?.id, "y")
+  assert.equal(pickBestSurveySearchMatch(shamli, "800645-003-00001-001-H")?.id, "x")
 })
 
 test("isMixedPropertyUse and isCommercialPropertyUse match catalog labels", () => {

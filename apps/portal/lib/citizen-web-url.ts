@@ -1,4 +1,4 @@
-import { ULB } from "@/lib/ulb-branding"
+import { ULB } from "./ulb-branding"
 /** Public citizen website base URL (apps/web). Used for staff links to online pay. */
 export function getCitizenWebUrl(): string {
   const configured = process.env.NEXT_PUBLIC_CITIZEN_WEB_URL?.trim()

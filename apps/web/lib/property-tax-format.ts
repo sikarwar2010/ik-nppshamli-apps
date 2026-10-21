@@ -1,4 +1,5 @@
 import type { PublicPropertyTaxDues } from "@workspace/types"
+import { site } from "@/lib/site"
 
 export function formatHouseTaxMoney(n: number): string {
   return n.toLocaleString("en-IN", {
@@ -13,7 +14,7 @@ export function buildHouseTaxAddress(dues: PublicPropertyTaxDues): string {
     dues.streetName,
     dues.locality,
     dues.colony,
-    dues.city ?? "Nagar Panchayat Chhata",
+    dues.city ?? site.identity.nameEn,
     dues.pincode,
   ].filter(Boolean)
   return parts.length > 0 ? parts.join(", ") : "—"

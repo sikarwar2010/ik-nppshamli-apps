@@ -1,6 +1,7 @@
 "use client"
 
 import type { PublicPropertyTaxDues } from "@workspace/types"
+import { site } from "@/lib/site"
 
 function money(n: number): string {
   return n.toLocaleString("en-IN", {
@@ -15,15 +16,15 @@ function buildAddress(dues: PublicPropertyTaxDues): string {
     dues.streetName,
     dues.locality,
     dues.colony,
-    dues.city ?? "Nagar Panchayat Chhata",
+    dues.city ?? site.identity.nameEn,
     dues.pincode,
   ].filter(Boolean)
   return parts.length > 0 ? parts.join(", ") : "—"
 }
 
-/** Hostname for payment instructions; localhost → www.npchhata.com */
+/** Hostname for payment instructions; localhost → the site origin host */
 function getWebsiteDisplayHost(): string {
-  const fallback = "www.npchhata.com"
+  const fallback = new URL(site.origin).hostname
   const candidates = [
     process.env.NEXT_PUBLIC_CITIZEN_WEB_URL?.trim(),
     typeof window !== "undefined" ? window.location.origin : undefined,
@@ -72,8 +73,10 @@ export function DemandNoticeView({ dues }: { dues: PublicPropertyTaxDues }) {
             />
           </div>
           <div className="header-center">
-            <div className="office-en">Office of Nagar Panchayat Chhata</div>
-            <div className="office-loc">Chhata, Mathura, Uttar Pradesh</div>
+            <div className="office-en">Office of {site.identity.nameEn}</div>
+            <div className="office-loc">
+              {site.identity.town}, {site.identity.district}, {site.identity.state}
+            </div>
             <div className="title-en">Property Tax Demand Notice</div>
             <div className="title-hi">संपत्ति कर मांग सूचना पत्र</div>
           </div>
@@ -245,7 +248,7 @@ export function DemandNoticeView({ dues }: { dues: PublicPropertyTaxDues }) {
           <div className="notice-body">
             This is a computer-generated house tax statement based on the
             published municipal tax configuration for the assessment year shown
-            above. Please verify particulars with Nagar Panchayat Chhata before
+            above. Please verify particulars with {site.identity.nameEn} before
             making payment. To pay online, use the Pay Online button on this
             page and complete payment through the secure gateway.
             {tax.penalty > 0 ? (
@@ -254,9 +257,9 @@ export function DemandNoticeView({ dues }: { dues: PublicPropertyTaxDues }) {
               </div>
             ) : null}
             <div className="payment-point">
-              नगर पंचायत छाता की वेबसाइट{" "}
+              {site.identity.nameHi} की वेबसाइट{" "}
               <span className="site-url">{websiteHost}</span> पर लॉग इन कर अथवा
-              सीधे नगर पंचायत काउंटर पर भी सामान्य कर (गृह कर) का भुगतान किया जा
+              सीधे कार्यालय काउंटर पर भी सामान्य कर (गृह कर) का भुगतान किया जा
               सकता है।
             </div>
           </div>
@@ -268,7 +271,7 @@ export function DemandNoticeView({ dues }: { dues: PublicPropertyTaxDues }) {
             <div className="sig-line" />
             <div className="sig-role">EXECUTIVE OFFICER</div>
             <div className="sig-office">अधिशासी अधिकारी</div>
-            <div className="sig-office">Nagar Panchayat Chhata</div>
+            <div className="sig-office">{site.identity.nameEn}</div>
           </div>
         </div>
       </article>

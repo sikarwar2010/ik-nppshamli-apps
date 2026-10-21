@@ -9,8 +9,11 @@ COPY . .
 RUN turbo prune web --docker
 
 FROM base AS installer
-ARG API_INTERNAL_URL=http://chhata-api:4000
+ARG API_INTERNAL_URL=http://shamli-api:4000
 ENV API_INTERNAL_URL=$API_INTERNAL_URL
+# Municipality whose website is built into this image (inlined at build time).
+ARG NEXT_PUBLIC_SITE_ID=shamli
+ENV NEXT_PUBLIC_SITE_ID=$NEXT_PUBLIC_SITE_ID
 COPY --from=pruner /app/out/json/ .
 COPY --from=pruner /app/out/pnpm-lock.yaml ./pnpm-lock.yaml
 RUN pnpm install --frozen-lockfile
@@ -30,7 +33,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3001
-ENV API_INTERNAL_URL=http://chhata-api:4000
+ENV API_INTERNAL_URL=http://shamli-api:4000
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 COPY --from=installer --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
 COPY --from=installer --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static

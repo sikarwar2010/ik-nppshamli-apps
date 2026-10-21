@@ -5,7 +5,7 @@ packages:
 catalog:
   react: 19.2.8
   react-dom: 19.2.8
-  next: 16.3.4
+  next: 16.3.8
   typescript: ^6.0.3
   eslint: ^10.13.0
   "@types/node": ^26.6.5
@@ -19,6 +19,18 @@ verifyDepsBeforeRun: error
 overrides:
   # Pin to 11.x: >=11.1.1 security fix without uuid@14 ESM (breaks Jest + exceljs)
   uuid: ^14.0.2
+  # Security patches within the same major (pnpm audit, 2026-10-21):
+  # proxy-addr IP spoofing (critical; Express client IP → rate limiting),
+  # multer multipart DoS, lodash code injection / prototype pollution,
+  # fast-uri host confusion, source-map-js DoS, brace-expansion@2 ReDoS,
+  # mysql2 (Prisma transitive). Remove once upstream ranges include them.
+  proxy-addr: ^2.0.8
+  multer: ^2.3.0
+  lodash: ^4.18.1
+  fast-uri: ^3.1.7
+  source-map-js: ^1.2.2
+  "brace-expansion@2": ^2.1.7
+  mysql2: ^3.22.0
 
 allowBuilds:
   "@parcel/watcher": true

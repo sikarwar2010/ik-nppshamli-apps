@@ -72,5 +72,12 @@ describe("storage config", () => {
         MINIO_SECRET_KEY: "shamli-minio-dev-password",
       })
     ).toEqual([expect.stringMatching(/development default/)])
+    expect(
+      collectStorageEnvErrors({
+        ...minioEnv,
+        NODE_ENV: "production",
+        MINIO_SECRET_KEY: "CHANGE_ME_strong_api_secret_key",
+      })
+    ).toEqual([expect.stringMatching(/placeholder/)])
   })
 })

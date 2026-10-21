@@ -1,16 +1,14 @@
-import PublicGrievance from "@/components/public-grievance/page"
+import variant from "@site/variant"
 import type { Metadata } from "next"
 
+import { site } from "@/lib/site"
+
 export const metadata: Metadata = {
-  title: "PublicGrievance",
-  description:
-    "PublicGrievance page for Nagar Panchayat Chhata, Mathura, Uttar Pradesh, India. Submit your grievances and feedback to help us improve our services and community initiatives.",
+  title: "Public grievance",
+  description: `How to register a grievance with ${site.identity.nameEn}.`,
+  alternates: { canonical: "/public-grievance" },
 }
 
-export default function () {
-  return (
-    <div>
-      <PublicGrievance />
-    </div>
-  )
+export default function Page() {
+  return <variant.Grievance />
 }

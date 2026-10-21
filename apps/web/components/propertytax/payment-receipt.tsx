@@ -4,6 +4,7 @@ import { CheckCircle2 } from "lucide-react"
 import Image from "next/image"
 
 import type { PublicPropertyTaxReceipt } from "@workspace/types"
+import { site } from "@/lib/site"
 
 function money(n: number): string {
   return n.toLocaleString("en-IN", {
@@ -55,9 +56,11 @@ export function PaymentReceiptView({
           </div>
           <div className="header-center">
             <p className="state-line">Government of Uttar Pradesh</p>
-            <h1 className="office-en">NAGAR PANCHAYAT CHHATA, MATHURA</h1>
+            <h1 className="office-en">
+              {`${site.identity.nameEn}, ${site.identity.district}`.toUpperCase()}
+            </h1>
             <p className="office-loc">
-              Mathura District · Uttar Pradesh, India
+              {site.identity.district} District · {site.identity.state}, India
             </p>
             <div className="title-block">
               <h2 className="title-en">Property Tax Payment Receipt</h2>
@@ -211,10 +214,10 @@ export function PaymentReceiptView({
         <footer className="footer">
           <p>
             This is a computer-generated official receipt for online property
-            tax payment to Nagar Panchayat Chhata. No signature is required.
+            tax payment to {site.identity.nameEn}. No signature is required.
           </p>
           <p className="footer-hi">
-            यह नगर पंचायत छाता के लिए ऑनलाइन सम्पत्ति कर भुगतान की
+            यह {site.identity.nameHi} के लिए ऑनलाइन सम्पत्ति कर भुगतान की
             कम्प्यूटर-जनित आधिकारिक रसीद है।
           </p>
         </footer>

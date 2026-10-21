@@ -1,16 +1,21 @@
-import Departments from "@/components/departments/page"
+import variant from "@site/variant"
 import type { Metadata } from "next"
+import { notFound } from "next/navigation"
+
+import { site } from "@/lib/site"
 
 export const metadata: Metadata = {
   title: "Departments",
-  description:
-    " Explore the various departments of Nagar Panchayat Chhata, Mathura, Uttar Pradesh, India. Learn about their functions, services, and how they contribute to the community's development and well-being.",
+  description: `Departments — ${site.identity.nameEn}.`,
 }
 
-export default function departments() {
-  return (
-    <div>
-      <Departments />
-    </div>
-  )
+/**
+ * Only sites with verified content for this page render it; others show the
+ * 404 page. Responses stream behind app/loading.tsx, so Next serves them with
+ * <meta name="robots" content="noindex"> (status cannot change mid-stream).
+ */
+export default function Page() {
+  const Content = variant.Departments
+  if (!Content) notFound()
+  return <Content />
 }

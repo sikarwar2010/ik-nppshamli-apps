@@ -18,7 +18,7 @@
 # Do not publish Postgres or Redis. Do not add container_name
 # (Isolated Deployments suffixes resources).
 #
-# Internal API DNS: portal/web MUST use http://chhata-api:4000, not
+# Internal API DNS: portal/web MUST use http://shamli-api:4000, not
 # http://api:4000. Dokploy Traefik attaches a shared network to portal/web;
 # Docker then merges A records for the short name `api` across every network
 # the container is on. Another Compose stack named `api` on that shared
@@ -60,6 +60,27 @@ services:
     expose:
       - "6379"
 
+  # Private object storage for survey/property images. Not published to the
+  # host or Traefik: only the API talks to it (signed /api/v1/files links).
+  # Do NOT attach a Dokploy domain to port 9000/9001. For console access use
+  # an SSH tunnel (docs/storage/minio.md).
+  minio:
+    image: ${MINIO_IMAGE:-quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z}
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - shamli_minio_data:/data
+    healthcheck:
+      test: [ "CMD", "mc", "ready", "local" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    expose:
+      - "9000"
+
   api:
     build:
       context: .
@@ -79,6 +100,17 @@ services:
       # Redis is required for sessions, login lockout, and rate limiting.
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       STORAGE_DIR: /app/uploads
+      # Survey images in MinIO (credentials from the Dokploy Environment tab).
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-minio}
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: "9000"
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${MINIO_BUCKET:-shamli-survey-images}
+      # Shamli GIS ids: 800645-003-00001-001-H (5-digit parcels).
+      ULB_CODE: ${ULB_CODE:-800645}
+      SURVEY_PARCEL_DIGITS: ${SURVEY_PARCEL_DIGITS:-5}
       CORS_ORIGIN: ${PUBLIC_PORTAL_URL},${PUBLIC_WEB_URL}
       PUBLIC_APP_URL: ${PUBLIC_PORTAL_URL}
       SESSION_SECRET: ${SESSION_SECRET}
@@ -95,6 +127,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     healthcheck:
       test: [ "CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/v1/health/ready').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" ]
@@ -117,6 +151,8 @@ services:
         API_INTERNAL_URL: http://shamli-api:4000
         NEXT_PUBLIC_APP_URL: ${PUBLIC_PORTAL_URL}
         NEXT_PUBLIC_CITIZEN_WEB_URL: ${PUBLIC_WEB_URL}
+        NEXT_PUBLIC_ULB_CODE: ${ULB_CODE:-800645}
+        NEXT_PUBLIC_SURVEY_PARCEL_DIGITS: ${SURVEY_PARCEL_DIGITS:-5}
     restart: unless-stopped
     env_file: .env
     environment:
@@ -145,13 +181,15 @@ services:
       dockerfile: docker/web.Dockerfile
       args:
         API_INTERNAL_URL: http://shamli-api:4000
+        # Which municipality's website this image contains (shamli | chhata).
+        NEXT_PUBLIC_SITE_ID: ${SITE_ID:-shamli}
     restart: unless-stopped
     env_file: .env
     environment:
       NODE_ENV: production
       PORT: "3001"
       HOSTNAME: 0.0.0.0
-      API_INTERNAL_URL: http://chhata-api:4000
+      API_INTERNAL_URL: http://shamli-api:4000
     depends_on:
       api:
         condition: service_healthy
@@ -168,3 +206,4 @@ volumes:
   shamli_pg_data:
   shamli_redis_data:
   shamli_uploads:
+  shamli_minio_data:

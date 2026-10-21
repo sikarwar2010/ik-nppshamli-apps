@@ -1,0 +1,23 @@
+# Secret scanning (CI: .github/workflows/ci.yml → security job).
+# Extends the default ruleset; only documented, non-secret placeholders are allowed.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Local-dev defaults, test fixtures and example placeholders (never production secrets)"
+paths = [
+  '''(^|/)\.env(\.[a-z]+)?\.example$''',
+  '''(^|/)docker-compose\.yml$''',
+  '''(^|/)apps/api/test/''',
+  '''\.spec\.ts$''',
+  '''(^|/)node_modules/''',
+  '''(^|/)(dist|\.next|\.turbo|coverage|tmp)/''',
+  '''(^|/)pnpm-lock\.yaml$''',
+  # Vendor (Atom) integration guides quoting the gateway's public UAT sample
+  # merchant (317157 / Test@123). Not production credentials.
+  '''(^|/)docs/payment-api-guides/''',
+]
+regexes = [
+  '''CHANGE_ME[A-Za-z0-9_]*''',
+  '''change-me[a-z0-9-]*''',
+]

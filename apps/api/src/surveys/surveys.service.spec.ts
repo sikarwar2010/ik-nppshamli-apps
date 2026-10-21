@@ -48,6 +48,11 @@ describe("SurveysService", () => {
   }
   let audit: { log: jest.Mock }
 
+  const afterEachRestore: Array<() => void> = []
+  afterEach(() => {
+    while (afterEachRestore.length) afterEachRestore.pop()?.()
+  })
+
   beforeEach(async () => {
     prisma = {
       survey: {
@@ -236,6 +241,13 @@ describe("SurveysService", () => {
   })
 
   it("creates survey with generated id", async () => {
+    // Chhata-style ULB + 6-digit parcels (configuration, not the default).
+    const previousUlb = process.env.ULB_CODE
+    process.env.ULB_CODE = "249044"
+    afterEachRestore.push(() => {
+      if (previousUlb === undefined) delete process.env.ULB_CODE
+      else process.env.ULB_CODE = previousUlb
+    })
     prisma.survey.findUnique.mockResolvedValue(null)
     prisma.survey.create.mockResolvedValue({
       ...baseSurvey,

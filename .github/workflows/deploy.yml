@@ -1,0 +1,146 @@
+name: Deploy
+
+# Production releases: push a version tag (v1.2.3) or run manually for an
+# existing tag. The `production` environment must have required reviewers
+# configured in GitHub (Settings → Environments) so nothing ships unreviewed.
+# Runbook and rollback: docs/operations/ci-cd.md
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Tag to deploy (e.g. v1.2.3)"
+        required: true
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publish versioned images
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        app: [api, portal, web]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - id: version
+        run: echo "tag=${REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+        env:
+          REF: ${{ inputs.ref || github.ref }}
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/${{ matrix.app }}.Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/${{ matrix.app }}:${{ steps.version.outputs.tag }}
+            ghcr.io/${{ github.repository }}/${{ matrix.app }}:sha-${{ github.sha }}
+          build-args: |
+            API_BUILD_ID=${{ steps.version.outputs.tag }}
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}
+
+  deploy:
+    name: Deploy to production (Dokploy)
+    needs: publish
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 45
+    env:
+      PUBLIC_PORTAL_URL: ${{ vars.PUBLIC_PORTAL_URL }}
+      PUBLIC_WEB_URL: ${{ vars.PUBLIC_WEB_URL }}
+      # secrets.* is not allowed in step if: conditions; expose presence only.
+      HAS_SSH_BACKUP: ${{ secrets.DEPLOY_SSH_HOST != '' }}
+    steps:
+      - name: Validate deployment configuration (values are never printed)
+        env:
+          DOKPLOY_DEPLOY_WEBHOOK: ${{ secrets.DOKPLOY_DEPLOY_WEBHOOK }}
+        run: |
+          missing=0
+          for name in DOKPLOY_DEPLOY_WEBHOOK PUBLIC_PORTAL_URL PUBLIC_WEB_URL; do
+            if [ -z "${!name}" ]; then echo "::error::$name is not configured"; missing=1; fi
+          done
+          case "$PUBLIC_PORTAL_URL$PUBLIC_WEB_URL" in *localhost*|*example.com*) echo "::error::Public URLs still point at placeholders"; missing=1;; esac
+          exit $missing
+
+      - name: Back up production database (pg_dump over SSH)
+        if: env.HAS_SSH_BACKUP == 'true'
+        env:
+          SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+          PG_CONTAINER: ${{ vars.DEPLOY_PG_CONTAINER }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          stamp=$(date -u +%Y%m%dT%H%M%SZ)
+          # Read-only dump; credentials stay inside the container's environment.
+          ssh -i ~/.ssh/id_deploy "$SSH_USER@$SSH_HOST" \
+            "mkdir -p ~/backups/shamli && docker exec $PG_CONTAINER sh -c 'pg_dump -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -Fc' > ~/backups/shamli/pre-deploy-$stamp.dump && ls -l ~/backups/shamli/pre-deploy-$stamp.dump"
+          echo "Backup: ~/backups/shamli/pre-deploy-$stamp.dump" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Warn when no pre-deploy backup is configured
+        if: env.HAS_SSH_BACKUP != 'true'
+        run: echo "::warning::DEPLOY_SSH_HOST not set — relying on Dokploy scheduled backups. See docs/operations/ci-cd.md."
+
+      - name: Trigger Dokploy deployment
+        env:
+          DOKPLOY_DEPLOY_WEBHOOK: ${{ secrets.DOKPLOY_DEPLOY_WEBHOOK }}
+        # Dokploy builds docker-compose.prod.yml at the deployed commit and runs
+        # `prisma migrate deploy` (additive, reviewed migrations) on API start.
+        run: curl -fsS -X POST "$DOKPLOY_DEPLOY_WEBHOOK" -o /dev/null
+
+      - name: Wait for API readiness (Postgres, Redis, object storage)
+        run: |
+          for _ in $(seq 1 60); do
+            body=$(curl -fsS "$PUBLIC_PORTAL_URL/api/v1/health/ready" || true)
+            if echo "$body" | grep -q '"status":"ready"' && echo "$body" | grep -q '"storage":true'; then
+              echo "$body"; exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::API did not become ready (database / redis / storage)"; exit 1
+
+      - name: Smoke tests
+        run: |
+          set -e
+          check() { code=$(curl -s -o /dev/null -w '%{http_code}' "$1"); echo "$code $1"; [ "$code" = "$2" ]; }
+          check "$PUBLIC_PORTAL_URL/login" 200
+          check "$PUBLIC_WEB_URL/" 200
+          check "$PUBLIC_WEB_URL/propertytax" 200
+          check "$PUBLIC_WEB_URL/sitemap.xml" 200
+          check "$PUBLIC_WEB_URL/api/v1/public/property-tax/wards" 200
+          check "$PUBLIC_PORTAL_URL/api/v1/surveys" 401
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          {
+            echo "## Deployment ${{ job.status }}"
+            echo "- Ref: \`${{ inputs.ref || github.ref_name }}\` (${{ github.sha }})"
+            echo "- Portal: $PUBLIC_PORTAL_URL · Website: $PUBLIC_WEB_URL"
+            echo "- Rollback: re-run this workflow with the previous tag; restore the pre-deploy dump only if a migration must be reverted (docs/operations/ci-cd.md)."
+          } >> "$GITHUB_STEP_SUMMARY"

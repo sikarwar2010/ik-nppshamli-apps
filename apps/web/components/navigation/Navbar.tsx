@@ -77,7 +77,11 @@ export default function Navbar() {
     },
     { name: "Public Grievance", href: "/public-grievance", hasDropdown: false },
     { name: "Schemes", href: "/schemes", hasDropdown: false },
-    // { name: "News And Notice", href: "/newsandnotice", hasDropdown: false },
+    // Adopted from the Shamli reference IA (docs/websites/chhata-ia-from-shamli.md).
+    { name: "e-Services", href: "/e-services", hasDropdown: false },
+    { name: "Notices", href: "/notices", hasDropdown: false },
+    { name: "Documents", href: "/documents", hasDropdown: false },
+    { name: "RTI", href: "/rti", hasDropdown: false },
     { name: "Gallery", href: "/gallery", hasDropdown: false },
     { name: "Staff", href: "/staff", hasDropdown: false },
     { name: "Contact", href: "/contact", hasDropdown: false },

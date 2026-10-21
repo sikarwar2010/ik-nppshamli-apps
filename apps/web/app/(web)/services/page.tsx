@@ -1,16 +1,14 @@
-import Services from "@/components/services/page"
+import variant from "@site/variant"
 import type { Metadata } from "next"
 
+import { site } from "@/lib/site"
+
 export const metadata: Metadata = {
-  title: "Services ",
-  description:
-    "Services page for Nagar Panchayat Chhata, Mathura, Uttar Pradesh, India. Discover the various services we offer to support our community and enhance the quality of life in our town.",
+  title: "Citizen services",
+  description: `Online services and official e-service portals for citizens of ${site.identity.nameEn}.`,
+  alternates: { canonical: "/services" },
 }
 
-export default function () {
-  return (
-    <div>
-      <Services />
-    </div>
-  )
+export default function Page() {
+  return <variant.Services />
 }

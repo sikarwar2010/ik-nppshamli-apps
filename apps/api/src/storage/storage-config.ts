@@ -85,9 +85,12 @@ export function collectStorageEnvErrors(
   if (secret && secret.length < 8) {
     errors.push("MINIO_SECRET_KEY must be at least 8 characters")
   }
-  if (env.NODE_ENV === "production" && DEV_ONLY_MINIO_SECRETS.has(secret)) {
+  if (
+    env.NODE_ENV === "production" &&
+    (DEV_ONLY_MINIO_SECRETS.has(secret) || /^CHANGE_ME/i.test(secret))
+  ) {
     errors.push(
-      "MINIO_SECRET_KEY uses a development default; set a strong secret in production"
+      "MINIO_SECRET_KEY uses a development default or placeholder; set a strong secret in production"
     )
   }
 

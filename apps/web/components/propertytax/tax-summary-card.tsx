@@ -7,6 +7,7 @@ import {
   formatHouseTaxMoney,
   isHouseTaxPayable,
 } from "@/lib/property-tax-format"
+import { site } from "@/lib/site"
 
 type TaxSummaryCardProps = {
   dues: PublicPropertyTaxDues
@@ -166,7 +167,7 @@ export function TaxSummaryCard({
               Online payment is not available for this property yet.
               <span className="mt-1 block font-normal text-amber-900/80">
                 Published tax rates may be missing or set to zero. Please contact
-                Nagar Panchayat Chhata.
+                {site.identity.nameEn}.
               </span>
             </div>
           ) : null}

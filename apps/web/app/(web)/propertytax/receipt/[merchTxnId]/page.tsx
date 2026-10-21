@@ -9,6 +9,7 @@ import { PaymentProcessSteps } from "@/components/propertytax/payment-process-st
 import { PaymentReceiptView } from "@/components/propertytax/payment-receipt"
 import { fetchPublicPaymentReceipt } from "@/lib/property-tax-api"
 import { PublicApiError } from "@/lib/public-api"
+import { site } from "@/lib/site"
 
 export default function PropertyTaxReceiptPage() {
   const params = useParams<{ merchTxnId: string }>()
@@ -52,8 +53,7 @@ export default function PropertyTaxReceiptPage() {
               {isSuccess ? "Payment Successful" : "Payment receipt"}
             </h1>
             <p className="mt-1 text-sm text-slate-600">
-              Official online house tax payment receipt for Nagar Panchayat
-              Chhata.
+              Official online house tax payment receipt for {site.identity.nameEn}.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">

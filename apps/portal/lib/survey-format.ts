@@ -11,7 +11,7 @@ import {
   parseGisSurveyId as parseGisSurveyIdShared,
   replacePlaceholderWardSegment,
 } from "@workspace/types"
-import { ULB } from "@/lib/ulb-branding"
+import { ULB } from "./ulb-branding"
 
 // NEXT_PUBLIC_* values are inlined at build time (must be referenced literally).
 export const ULB_NAME = ULB.nameEn
@@ -45,7 +45,6 @@ export function parseGisSurveyId(
 }
 
 export {
-  CHHATA_ULB_CODE,
   buildSurveyIdFromRecord,
   generateSurveyId,
   normalizeGisUseCode,
@@ -69,16 +68,17 @@ export function pickBestSurveySearchMatch<
 >(rows: T[], query: string): T | undefined {
   if (!rows.length) return undefined
   const q = query.trim()
-  const paddedQuery = tryNormalizeParcelNo(q)
+  // Width-agnostic: "131" matches "000131" (Chhata) and "00131" (Shamli).
+  const parcelKey = (value: string) => {
+    const v = value.trim()
+    return /^\d+$/.test(v) ? v.replace(/^0+/, "") || "0" : v.toLowerCase()
+  }
+  const queryKey = parcelKey(q)
 
-  if (paddedQuery) {
-    const exactParcel = rows.find((row) => {
-      const paddedRow = tryNormalizeParcelNo(row.parcelNo ?? "")
-      return (
-        paddedRow === paddedQuery ||
-        (row.parcelNo ?? "").trim().toLowerCase() === q.toLowerCase()
-      )
-    })
+  if (queryKey) {
+    const exactParcel = rows.find(
+      (row) => row.parcelNo != null && parcelKey(row.parcelNo) === queryKey
+    )
     if (exactParcel) return exactParcel
   }
 

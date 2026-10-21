@@ -4,7 +4,7 @@
  * https://nppshamli.in) used to plan the information architecture of the
  * municipal websites in apps/web.
  *
- *   node scripts/site-inventory/inventory-reference-site.mjs [--base https://nppshamli.in] [--out tmp/site-inventory]
+ *   node scripts/site-inventory/inventory-reference-site.mjs [--base https://nppshamli.in] [--out tmp/site-inventory] [--content]
  *
  * Rules (see docs/websites/README.md):
  * - Honours robots.txt (Disallow rules for "*" and our user agent).
@@ -48,6 +48,55 @@ const PAGES = [
 ]
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * --content: also capture reviewable content blocks (tables, paragraphs,
+ * document links, image asset URLs). Personal mobile numbers and e-mail
+ * addresses stay redacted; content must still be verified before publishing.
+ */
+const CONTENT_MODE = process.argv.includes("--content")
+
+/** Strip the shared site chrome (menus, footer, officer sidebar) before extraction. */
+function mainArea(html) {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<ul[^>]*class="[^"]*menu[^"]*"[\s\S]*?<\/ul>/gi, " ")
+    .replace(/<iframe[\s\S]*?<\/iframe>/gi, " ")
+}
+
+function extractContent(html, pageUrl) {
+  const body = mainArea(html)
+  const tables = [...body.matchAll(/<table[\s\S]*?<\/table>/gi)]
+    .map((t) =>
+      [...t[0].matchAll(/<tr[\s\S]*?<\/tr>/gi)]
+        .map((tr) => [...tr[0].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((c) => redact(text(c[1]))))
+        .filter((cells) => cells.some(Boolean))
+    )
+    // Layout tables wrap the whole page; keep data-like tables only.
+    .filter((rows) => rows.length >= 2 && rows.length <= 400 && rows.every((r) => r.length <= 12))
+  const paragraphs = text(body.replace(/<(br|\/p|\/div|\/li|\/tr)[^>]*>/gi, "\n"))
+    ? body
+        .replace(/<(br|\/p|\/div|\/li|\/tr|\/h\d)[^>]*>/gi, "\u0000")
+        .split("\u0000")
+        .map((chunk) => redact(text(chunk)))
+        .filter((t) => t.length >= 40)
+    : []
+  const documents = [...body.matchAll(/<a\b[^>]*href="([^"]+\.(?:pdf|docx?|xlsx?))"[^>]*>([\s\S]*?)<\/a>/gi)].map((m) => ({
+    label: redact(text(m[2])),
+    url: new URL(decode(m[1]), pageUrl).href,
+  }))
+  const images = [...body.matchAll(/<img\b[^>]*src="([^"]+)"[^>]*>/gi)].map((m) => ({
+    url: new URL(decode(m[1]), pageUrl).href,
+    alt: redact(decode(m[0].match(/alt="([^"]*)"/i)?.[1] ?? "")),
+  }))
+  return {
+    tables,
+    paragraphs: [...new Set(paragraphs)],
+    documents: [...new Map(documents.map((d) => [d.url, d])).values()],
+    images: [...new Map(images.map((i) => [i.url, i])).values()],
+  }
+}
 
 function decode(html) {
   return html
@@ -121,7 +170,9 @@ async function main() {
       const internal = [...new Map(links.filter((l) => !/^https?:/i.test(l.href) || l.href.includes(new URL(BASE).hostname)).map((l) => [l.href, l])).values()]
       const external = [...new Map(links.filter((l) => /^https?:/i.test(l.href) && !l.href.includes(new URL(BASE).hostname)).map((l) => [l.href, l])).values()]
       const words = text(html).split(" ").filter(Boolean).length
+      const content = CONTENT_MODE ? extractContent(html, BASE + p) : undefined
       pages.push({
+        ...(content ? { content } : {}),
         path: p,
         status: res.status,
         title: redact(title),
@@ -147,7 +198,7 @@ async function main() {
     externalServices,
   }
   await mkdir(OUT, { recursive: true })
-  const file = path.join(OUT, `inventory-${new URL(BASE).hostname}.json`)
+  const file = path.join(OUT, `${CONTENT_MODE ? "content" : "inventory"}-${new URL(BASE).hostname}.json`)
   await writeFile(file, JSON.stringify(inventory, null, 2))
   console.log(`Inventoried ${pages.length} page(s) → ${file}`)
   for (const p of pages) {

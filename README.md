@@ -101,6 +101,19 @@ On each API container start: **migrations** then **idempotent Super Admin seed**
 
 Production deploys must run **one** API replica (or many replicas of the **same** image sharing Redis + Postgres). Do not leave an old `api` container on the same Docker network during a rolling update — Compose DNS `api` round-robins every task with that name, including stale ones.
 
+## Shamli operations docs
+
+| Topic | Doc |
+| --- | --- |
+| Survey workbook import, mapping, rollback | [docs/shamli/excel-import.md](docs/shamli/excel-import.md) |
+| Ward 3 (Lajpat Rai) import & reconciliation report | [docs/shamli/ward-03-lajpat-rai-reconciliation.md](docs/shamli/ward-03-lajpat-rai-reconciliation.md) |
+| MinIO object storage, image migration, backups | [docs/storage/minio.md](docs/storage/minio.md) |
+| CI/CD, deployment, rollback | [docs/operations/ci-cd.md](docs/operations/ci-cd.md) |
+| Websites (Shamli / Chhata), content rules, reference inventory | [docs/websites/README.md](docs/websites/README.md) |
+
+Local ports for this stack (root `.env`, avoids other local projects): Postgres 5434,
+Redis 6381, Mailpit 1026/8026, MinIO 9000/9001 (localhost only).
+
 ## Fixtures
 
 - Survey Excel: `fixtures/survey/` (copied from source; originals never modified)
